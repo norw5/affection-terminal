@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "AFFECTION ecosystem address registry on PulseChain. Verified=true means source is verified on the PulseChain scanner (Blockscout). Re-verify via sources.md.",
+  "network": "pulsechain",
+  "chainId": 369,
+  "rpc": "https://rpc.pulsechain.com",
+  "scanner": "https://ipfs.scan.pulsechain.com",
+  "tokens": [
+    {
+      "name": "AFFECTION", "symbol": "\u24b6", "display": "AFFECTION\u2122",
+      "address": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "cap": "1111111111000000000000000000",
+      "role": "gateway token + on-chain RNG of the Dysnomia ecosystem",
+      "inherits": ["ERC20", "ERC20Burnable", "Ownable", "Dynamic", "Conjecture"],
+      "notes": "Generate() mints exactly 3 per call; BuyWithG5/PI/MATH/Fa/Faung redeem from the contract balance."
+    },
+    {
+      "name": "libAtropaMath v1.1", "symbol": "MATH",
+      "address": "0xB680F0cc810317933F234f67EB6A9E923407f05D",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "cap": "1111111111000000000000000000",
+      "role": "the math/RNG library AFFECTION depends on (aa); mints via Random() which calls RNG.Generate()",
+      "notes": "AFFECTION.Conjecture.aa == this contract. MotzkinPrime=953467954114363. pUSDT route bugged."
+    },
+    {
+      "name": "libAtropaMath v1.0", "symbol": "MATH",
+      "address": "0x5EF3011243B03f817223A19f277638397048A0DC",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "role": "older MATH; accepted as input by MATH v1.1 BuyWithMATH (1:1)"
+    },
+    {
+      "name": "GIMME FIVE", "symbol": "\u24d5", "display": "GIMME FIVE",
+      "address": "0x2fc636E7fDF9f3E8d61033103052079781a6e7D2",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "owner": "0x8B090509eAe0fEB4A0B934de1b4345161fA9a62d",
+      "role": "intermediate mint token; 1 G5 = 5 pDAI; 1 G5 = 5 AFFECTION"
+    },
+    {
+      "name": "pINDEPENDENCE", "symbol": "\u24df", "display": "pINDEPENDENCE",
+      "address": "0xA2262D7728C689526693aE893D0fD8a352C7073C",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "owner": "0x8B090509eAe0fEB4A0B934de1b4345161fA9a62d",
+      "role": "intermediate mint token; 1 PI = 300 pDAI; 1 PI = 300 AFFECTION"
+    },
+    {
+      "name": "Random Number Generator", "symbol": "RNG",
+      "address": "0xa96BcbeD7F01de6CEEd14fC86d90F21a36dE2143",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "role": "primitive RNG; MATH.Random() calls RNG.Generate()"
+    },
+    {
+      "name": "libConjecture v1.0", "symbol": "Fa",
+      "address": "0x232a27AB6941281b3f474Fe5fF7Cc89816fB675A",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "role": "lower-level conjecture token; 4 Fa = 1 AFFECTION"
+    },
+    {
+      "name": "libDynamic v1.0", "symbol": "Faung",
+      "address": "0x73A19FaFb359faf519C9707b781dfdB88407d10d",
+      "decimals": 18, "verified": true, "still_mintable": true,
+      "role": "the Faung token; 2 Faung = 1 AFFECTION; supply ~3"
+    },
+    {
+      "name": "pDAI", "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+      "decimals": 18, "verified": true, "role": "PulseChain fork of DAI; base fuel for minting"
+    },
+    {
+      "name": "pUSDC", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "decimals": 6, "verified": true, "role": "PulseChain fork of USDC; base fuel for minting"
+    },
+    {
+      "name": "pUSDT", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+      "decimals": 6, "verified": true, "role": "PulseChain fork of USDT; bugged in MATH v1.1 - avoid"
+    },
+    {
+      "name": "BL\u00c4TTER", "symbol": "\u0e2d\u0e2d\u0e01\u0e08\u0e32\u0e01\ud83c\udd10",
+      "address": "0xCe1d47CE3A91E054C111d9cC3B4bae50843200da",
+      "verified": false, "still_mintable": false,
+      "role": "sibling token; not verified, no longer mintable"
+    }
+  ],
+  "multi_mint_contracts": {
+    "$comment": "Legacy community-deployed batchers. Used ONLY by the portal's /mint Tier-2 compatibility mode (every step pre-simulated live; their owner-settable tax is surfaced). Not maintained or endorsed by this portal — the supported path is deploying your own batcher via /batcher. Addresses are verifiable on-chain.",
+    "contracts": [
+      { "name": "Multi PI",         "address": "0xcCDaCEF154704c604365dB9E3b1DF356B9c4B6E2" },
+      { "name": "Multi G5",         "address": "0xa4c61D20945c11855E7A390153fd29ceC9C7349b" },
+      { "name": "Multi MATH 1.0",   "address": "0x5bD78AdD4007C47ffEFc2c98a53188036199ac6f" },
+      { "name": "Multi MATH 1.1",   "address": "0x1322Dab9eE385Bb3D81f75EBb8356015B0872e53" },
+      { "name": "Multi AFFECTION",   "address": "0x81fcd03D2100A0fE9767C0CfC68050bdc6a2969d" }
+    ]
+  },
+  "constants": {
+    "MotzkinPrime": "953467954114363",
+    "AFFECTION_cap": "1111111111",
+    "MATH_cap": "1111111111"
+  }
+}

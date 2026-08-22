@@ -1,0 +1,9 @@
+# Cloudflare Pages SPA routing — every path serves index.html (the router handles the rest).
+/*    /index.html   200
+
+# Long-cache immutable hashed assets (Vite emits content-hashed filenames here).
+/assets/*  /assets/:splat  200
+# (Cloudflare Pages auto-applies long cache headers to /assets/* by default for hashed files.)
+
+# Short-cache the SVG icon (rarely changes, but not content-hashed).
+/icon.svg  /icon.svg  200

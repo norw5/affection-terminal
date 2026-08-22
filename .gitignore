@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Local planning notes + recovered-contract dump + pre-canonization docs backup.
+# NOTE: `affection_docs/` is NOT ignored — it is the committed source of truth the app
+# imports at build time (via import.meta.glob). `docs/` holds the local ARCHITECTURE.md,
+# `docs/solidity/` (reference-only, available on GitHub at busytoby/atropa_pulsechain),
+# and `docs/affection_docs_working_backup/` (the pre-canonization working KB).
+# NOTE: `contracts/artifacts/` is NOT ignored either — the app imports the compiled
+# batcher artifacts at build time; recompile with `npm run compile-batcher`.
+docs/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Vercel
+.vercel

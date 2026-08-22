@@ -1,0 +1,31 @@
+{
+  "contractName": "IMintable",
+  "abi": [
+    {
+      "inputs": [],
+      "name": "BuyWithDAI",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "methodIdentifiers": {
+    "BuyWithDAI()": "0568cb7d"
+  },
+  "metadata": {
+    "sourceFile": "UnifiedAffectionBatcher.sol",
+    "variant": "mint-only"
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {},
+    "version": 1
+  },
+  "devdoc": {
+    "kind": "dev",
+    "methods": {},
+    "version": 1
+  }
+}

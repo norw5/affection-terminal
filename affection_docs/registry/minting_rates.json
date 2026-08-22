@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Authoritative minting-rate table for the AFFECTION ecosystem, read directly from verified contract bytecode (sources/affection.sol, multi-*.sol). 'rate_in = input needed per 1 output'. All amounts are in token base units; 'divisor' is the integer-division constant used in the contract.",
+  "affection": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+  "generate_mints_per_call": "3",
+  "generate_mint_units": "1000000000000000000",
+  "buy_routes": [
+    {
+      "function": "BuyWithG5",
+      "input_token": "0x2fc636E7fDF9f3E8d61033103052079781a6e7D2",
+      "input_symbol": "G5",
+      "output_token": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "output_symbol": "AFFECTION",
+      "contract_expression": "transferFrom(msg.sender, this, amount/5); transfer(msg.sender, amount)",
+      "divisor": 5,
+      "rate_in_per_1_out": "0.2",
+      "inverse_rate_out_per_1_in": "5",
+      "effective_floor_in_pDAI_per_1_AFFECTION": "1",
+      "requires_prior_charge": true,
+      "charge_calls_per_3_AFFECTION": 1,
+      "charge_function": "Generate()"
+    },
+    {
+      "function": "BuyWithPI",
+      "input_token": "0xA2262D7728C689526693aE893D0fD8a352C7073C",
+      "input_symbol": "PI",
+      "output_token": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "output_symbol": "AFFECTION",
+      "contract_expression": "transferFrom(msg.sender, this, amount/300); transfer(msg.sender, amount)",
+      "divisor": 300,
+      "rate_in_per_1_out": "0.003333333333333333",
+      "inverse_rate_out_per_1_in": "300",
+      "effective_floor_in_pDAI_per_1_AFFECTION": "1",
+      "requires_prior_charge": true,
+      "charge_calls_per_3_AFFECTION": 1,
+      "charge_function": "Generate()"
+    },
+    {
+      "function": "BuyWithMATH",
+      "input_token": "0xB680F0cc810317933F234f67EB6A9E923407f05D",
+      "input_symbol": "MATH",
+      "output_token": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "output_symbol": "AFFECTION",
+      "contract_expression": "transferFrom(msg.sender, this, amount); transfer(msg.sender, amount)",
+      "divisor": 1,
+      "rate_in_per_1_out": "1",
+      "inverse_rate_out_per_1_in": "1",
+      "effective_floor_in_pDAI_per_1_AFFECTION": "1",
+      "requires_prior_charge": true,
+      "charge_calls_per_3_AFFECTION": 1,
+      "charge_function": "Generate()"
+    },
+    {
+      "function": "BuyWithFa",
+      "input_token": "0x232a27AB6941281b3f474Fe5fF7Cc89816fB675A",
+      "input_symbol": "Fa",
+      "output_token": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "output_symbol": "AFFECTION",
+      "contract_expression": "transferFrom(msg.sender, this, amount*4); transfer(msg.sender, amount)",
+      "multiplier": 4,
+      "rate_in_per_1_out": "4",
+      "inverse_rate_out_per_1_in": "0.25",
+      "effective_floor_in_pDAI_per_1_AFFECTION": "depends on Fa mint cost",
+      "requires_prior_charge": true,
+      "charge_function": "Generate()"
+    },
+    {
+      "function": "BuyWithFaung",
+      "input_token": "0x73A19FaFb359faf519C9707b781dfdB88407d10d",
+      "input_symbol": "Faung",
+      "output_token": "0x24F0154C1dCe548AdF15da2098Fdd8B8A3B8151D",
+      "output_symbol": "AFFECTION",
+      "contract_expression": "transferFrom(msg.sender, this, amount*2); transfer(msg.sender, amount)",
+      "multiplier": 2,
+      "rate_in_per_1_out": "2",
+      "inverse_rate_out_per_1_in": "0.5",
+      "effective_floor_in_pDAI_per_1_AFFECTION": "depends on Faung mint cost",
+      "requires_prior_charge": true,
+      "charge_function": "Generate()"
+    }
+  ],
+  "intermediate_mint_rates": {
+    "G5_GIMME_FIVE_0x2fc636E7fDF9f3E8d61033103052079781a6e7D2": {
+      "BuyWithDAI":  { "input": "pDAI",  "input_address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "cost_per_1_token": "5",   "note": "1 G5 = 5 pDAI; mints 1 G5 per call (loop for N)" },
+      "BuyWithUSDC": { "input": "pUSDC", "input_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "cost_per_1_token": "5",   "note": "1 G5 = 5 pUSDC" },
+      "BuyWithUSDT": { "input": "pUSDT", "input_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "cost_per_1_token": "5",   "note": "1 G5 = 5 pUSDT" }
+    },
+    "PI_pINDEPENDENCE_0xA2262D7728C689526693aE893D0fD8a352C7073C": {
+      "BuyWithDAI":  { "input": "pDAI",  "input_address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "cost_per_1_token": "300", "note": "1 PI = 300 pDAI; mints 1 PI per call (loop for N)" },
+      "BuyWithUSDC": { "input": "pUSDC", "input_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "cost_per_1_token": "300", "note": "1 PI = 300 pUSDC" },
+      "BuyWithUSDT": { "input": "pUSDT", "input_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "cost_per_1_token": "300", "note": "1 PI = 300 pUSDT" }
+    },
+    "MATH_v1.1_libAtropaMath_0xB680F0cc810317933F234f67EB6A9E923407f05D": {
+      "Random":         { "note": "mints 1 MATH to the contract per call while totalSupply <= 1,111,111,111; returns RNG.Generate()" },
+      "BuyWithDAI":     { "input": "pDAI",   "input_address": "0x6B175474E89094C44Da98b954EedeAC495271d0F", "rate_in_per_1_out": "1",  "note": "1 MATH = 1 pDAI (drains MATH contract buffer)" },
+      "BuyWithUSDC":    { "input": "pUSDC",  "input_address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "rate_in_per_1_out": "1",  "note": "1 MATH = 1 pUSDC (6 decimals handled)" },
+      "BuyWithUSDT":    { "input": "pUSDT",  "input_address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "rate_in_per_1_out": "1",  "note": "BUGGED - do not use" },
+      "BuyWithG5":      { "input": "G5",     "input_address": "0x2fc636E7fDF9f3E8d61033103052079781a6e7D2", "divisor": 4, "rate_in_per_1_out": "0.25", "inverse_rate_out_per_1_in": "4", "note": "worse than pDAI-equiv (which would be 5)" },
+      "BuyWithPI":      { "input": "PI",     "input_address": "0xA2262D7728C689526693aE893D0fD8a352C7073C", "divisor": 212, "rate_in_per_1_out": "0.004716981132075471", "inverse_rate_out_per_1_in": "212", "note": "worse than pDAI-equiv (which would be 300)" },
+      "BuyWithMATH":    { "input": "MATH v1.0", "input_address": "0x5EF3011243B03f817223A19f277638397048A0DC", "rate_in_per_1_out": "1", "note": "1:1 with the v1.0 MATH" }
+    }
+  },
+  "multi_mint_per_loop": {
+    "_comment": "perLoop values used by MultiAffection.multiBuyWith(address, loops); amount = loops * 3 * 1e18 AFFECTION. Each perLoop is the intermediate tokens taken per loop.",
+    "contract": "0x81fcd03D2100A0fE9767C0CfC68050bdc6a2969d",
+    "affection_per_loop": "3",
+    "routes": {
+      "0x2fc636E7fDF9f3E8d61033103052079781a6e7D2": { "symbol": "G5",    "per_loop": "600000000000000000",   "human": "0.6 G5/loop" },
+      "0xA2262D7728C689526693aE893D0fD8a352C7073C": { "symbol": "PI",    "per_loop": "10000000000000000",     "human": "0.01 PI/loop" },
+      "0xB680F0cc810317933F234f67EB6A9E923407f05D": { "symbol": "MATH",  "per_loop": "3000000000000000000",    "human": "3 MATH/loop" },
+      "0x232a27AB6941281b3f474Fe5fF7Cc89816fB675A": { "symbol": "Fa",    "per_loop": "12000000000000000000",   "human": "12 Fa/loop" },
+      "0x73A19FaFb359faf519C9707b781dfdB88407d10d": { "symbol": "Faung", "per_loop": "6000000000000000000",    "human": "6 Faung/loop" }
+    }
+  }
+}

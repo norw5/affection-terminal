@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================ */
+/*  AFF_TERMINAL — terminal/TUI design tokens                  */
+/*  Dark, professional, IDE-flavored. No glassmorphism, no glow.*/
+/*  Monospace throughout. Easy on the eyes, high-contrast.      */
+/* ============================================================ */
+
+:root {
+  --c-bg: #0b0c0e;
+  --c-panel: #131417;
+  --c-panel-2: #191b1f;
+  --c-border: #24262b;
+  --c-border-bright: #34373e;
+
+  --c-text: #d4d7dd;
+  --c-text-dim: #9ea2ac;
+  --c-text-faint: #71757e;
+
+  --c-accent: #c9a86a; /* amber — occult/terminal */
+  --c-accent-dim: #8a7444;
+  --c-ok: #7fd1a5; /* mint — online/profitable */
+  --c-warn: #d4b06a;
+  --c-err: #e06c6b; /* loss/offline */
+  --c-info: #6ad4d4; /* cyan — route/info */
+
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --pane-h: 1.5px solid var(--c-border);
+}
+
+/* ---- Syntax-highlighting token colors (maps the dep-free tokenizer in
+   src/lib/highlight/ to the terminal palette). DELIBERATELY UNLAYERED: Tailwind
+   only prunes the contents of `@layer` blocks by scanning the source for literal
+   class names, and the tok classes are emitted dynamically (`tok-${type}`), so
+   they would be stripped if placed in `@layer components`. Unlayered CSS is always
+   kept. Kept low-contrast so code reads as structure, not a rainbow. ---- */
+.tok-keyword {
+  color: var(--c-accent);
+}
+.tok-type {
+  color: var(--c-info);
+}
+.tok-string {
+  color: var(--c-ok);
+}
+.tok-number {
+  color: var(--c-warn);
+}
+.tok-comment {
+  color: var(--c-text-faint);
+  font-style: italic;
+}
+.tok-function {
+  color: var(--c-text);
+  font-weight: 600;
+}
+.tok-punct,
+.tok-operator {
+  color: var(--c-text-dim);
+}
+.tok-property {
+  color: var(--c-info);
+}
+.tok-constant,
+.tok-variable {
+  color: var(--c-warn);
+}
+.tok-ident,
+.tok-text {
+  color: var(--c-text);
+}
+
+@layer base {
+  * {
+    border-color: var(--c-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background-color: var(--c-bg);
+    color: var(--c-text);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-feature-settings: "calt" 1, "zero" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--c-accent) 30%, transparent);
+    color: var(--c-text);
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--c-text);
+    font-weight: 600;
+  }
+  a {
+    color: var(--c-info);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  code,
+  kbd,
+  pre {
+    font-family: var(--font-mono);
+  }
+  /* Thin dark scrollbars — TUI feel */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-border-bright) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--c-border-bright);
+    border-radius: 0;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--c-text-faint);
+  }
+}
+
+@layer components {
+  /* A bordered panel like a tmux pane. Optional title bar. */
+  .pane {
+    @apply bg-panel border border-border;
+  }
+  .pane-title {
+    @apply flex items-center gap-2 border-b border-border bg-panel-2 px-3 py-1.5 text-xs uppercase tracking-wider text-text-dim;
+  }
+  .hairline {
+    @apply border-t border-border;
+  }
+  /* Blinking block cursor */
+  .cursor-block {
+    display: inline-block;
+    width: 0.55rem;
+    height: 1em;
+    background: var(--c-accent);
+    vertical-align: text-bottom;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .cursor-block {
+      animation: none;
+    }
+  }
+  /* Focus ring — subtle, monospace-friendly */
+  .focus-ring {
+    @apply outline-none;
+  }
+  .focus-ring:focus-visible {
+    outline: 1px solid var(--c-accent);
+    outline-offset: -1px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .ascii-divider {
+    color: var(--c-text-faint);
+    letter-spacing: -1px;
+    user-select: none;
+  }
+}
