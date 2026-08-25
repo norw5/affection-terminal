@@ -99,17 +99,5 @@
       "BuyWithPI":      { "input": "PI",     "input_address": "0xA2262D7728C689526693aE893D0fD8a352C7073C", "divisor": 212, "rate_in_per_1_out": "0.004716981132075471", "inverse_rate_out_per_1_in": "212", "note": "worse than pDAI-equiv (which would be 300)" },
       "BuyWithMATH":    { "input": "MATH v1.0", "input_address": "0x5EF3011243B03f817223A19f277638397048A0DC", "rate_in_per_1_out": "1", "note": "1:1 with the v1.0 MATH" }
     }
-  },
-  "multi_mint_per_loop": {
-    "_comment": "perLoop values used by MultiAffection.multiBuyWith(address, loops); amount = loops * 3 * 1e18 AFFECTION. Each perLoop is the intermediate tokens taken per loop.",
-    "contract": "0x81fcd03D2100A0fE9767C0CfC68050bdc6a2969d",
-    "affection_per_loop": "3",
-    "routes": {
-      "0x2fc636E7fDF9f3E8d61033103052079781a6e7D2": { "symbol": "G5",    "per_loop": "600000000000000000",   "human": "0.6 G5/loop" },
-      "0xA2262D7728C689526693aE893D0fD8a352C7073C": { "symbol": "PI",    "per_loop": "10000000000000000",     "human": "0.01 PI/loop" },
-      "0xB680F0cc810317933F234f67EB6A9E923407f05D": { "symbol": "MATH",  "per_loop": "3000000000000000000",    "human": "3 MATH/loop" },
-      "0x232a27AB6941281b3f474Fe5fF7Cc89816fB675A": { "symbol": "Fa",    "per_loop": "12000000000000000000",   "human": "12 Fa/loop" },
-      "0x73A19FaFb359faf519C9707b781dfdB88407d10d": { "symbol": "Faung", "per_loop": "6000000000000000000",    "human": "6 Faung/loop" }
-    }
   }
 }

@@ -44,36 +44,52 @@ export const README: Doc | undefined = entries.find((d) => d.filename.toLowerCas
 // The portal's own batcher contracts (contracts/*.sol) are bundled alongside these; the
 // old community multi-mint sources are deliberately NOT bundled (not maintained/vouched
 // for — see affection_docs/sources.md).
+//
+// These are lazy-loaded (eager: false) so they only enter the bundle when the user exports
+// the knowledge bundle — keeps the main chunk small (the .sol sources are ~200KB of text).
 const solModules = import.meta.glob("../../../affection_docs/sources/*.sol", {
   query: "?raw",
   import: "default",
-  eager: true,
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-export const SOURCES: { filename: string; content: string }[] = Object.entries(solModules)
-  .map(([path, content]) => ({ filename: path.split("/").pop()!, content }))
-  .sort((a, b) => a.filename.localeCompare(b.filename));
+export async function loadSources(): Promise<{ filename: string; content: string }[]> {
+  const entries = await Promise.all(
+    Object.entries(solModules).map(async ([path, mod]) => ({
+      filename: path.split("/").pop()!,
+      content: await mod(),
+    })),
+  );
+  return entries.sort((a, b) => a.filename.localeCompare(b.filename));
+}
 
 // The portal's own batcher contracts — authored + maintained by this portal, shipped in
 // the knowledge bundle so users can read/recompile/verify what the wizard deploys.
 const batcherModules = import.meta.glob("../../../contracts/*.sol", {
   query: "?raw",
   import: "default",
-  eager: true,
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-export const BATCHER_SOURCES: { filename: string; content: string }[] = Object.entries(
-  batcherModules,
-)
-  .map(([path, content]) => ({ filename: path.split("/").pop()!, content }))
-  .sort((a, b) => a.filename.localeCompare(b.filename));
+export async function loadBatcherSources(): Promise<{ filename: string; content: string }[]> {
+  const entries = await Promise.all(
+    Object.entries(batcherModules).map(async ([path, mod]) => ({
+      filename: path.split("/").pop()!,
+      content: await mod(),
+    })),
+  );
+  return entries.sort((a, b) => a.filename.localeCompare(b.filename));
+}
 
 const jsonModules = import.meta.glob("../../../affection_docs/registry/*.json", {
   query: "?raw",
   import: "default",
-  eager: true,
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-export const REGISTRY_FILES: { filename: string; content: string }[] = Object.entries(jsonModules)
-  .map(([path, content]) => ({ filename: path.split("/").pop()!, content }))
-  .sort((a, b) => a.filename.localeCompare(b.filename));
+export async function loadRegistryFiles(): Promise<{ filename: string; content: string }[]> {
+  const entries = await Promise.all(
+    Object.entries(jsonModules).map(async ([path, mod]) => ({
+      filename: path.split("/").pop()!,
+      content: await mod(),
+    })),
+  );
+  return entries.sort((a, b) => a.filename.localeCompare(b.filename));
+}

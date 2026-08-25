@@ -22,6 +22,9 @@ const queryClient = new QueryClient({
 const rootEl = document.getElementById("root");
 if (!rootEl) throw new Error("root element not found");
 
+// Remove the pre-hydration boot splash now that React is about to mount.
+document.getElementById("boot")?.remove();
+
 createRoot(rootEl).render(
   <StrictMode>
     <ErrorBoundary>

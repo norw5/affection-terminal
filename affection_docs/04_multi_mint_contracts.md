@@ -86,8 +86,11 @@ The `/batcher` page in this portal is a deployment wizard:
 3. **Deploy** — the wizard pre-simulates the deployment (a creation `eth_call`) before
    you sign anything, and the deployed address is derived from *your* wallet nonce, so
    the contract is entirely yours.
-4. **Mint via your batcher** — two steps (approve pStable → `mintFromStable`), both
-   pre-simulated in the UI.
+
+Once deployed, head to `/mint` to mint through it — the mint terminal remembers your
+batcher per wallet and offers it automatically. Two steps per mint (approve pStable →
+`mintFromStable`), both pre-simulated in the UI. If you already hold the intermediate
+(MATH / G5 / PI), a `multiBuyWith` mode skips the pStable leg in the same atomic tx.
 
 Because the source is a single self-contained file, it can also be compiled and deployed
 with any standard toolchain (e.g. `solc` or Remix) without special setup. The full source
@@ -128,14 +131,36 @@ simply split across multiple `mintFromStable` calls.
 > the base fee only needs to clear the current block's threshold. Legacy (type‑0)
 > transactions with a plain `gasPrice` work too but can't distinguish the two components.
 
-## A note on the older community batchers
+## Supply caps & route availability
 
-Earlier community-deployed "multi-mint" batchers exist on-chain. The portal does not
-maintain, endorse, or document them: analysis of their deployed bytecode shows an admin
-surface (owner, settable tax, token/PLS withdrawal functions) that circulating copies of
-their source do not reflect — a trust surface the portal's own batchers deliberately
-eliminate by having no admin surface at all. The `/mint` terminal retains a legacy
-compatibility mode that can drive those older contracts, with every step pre-simulated
-against the live chain state and their current tax read surfaced before you sign; it is
-offered for completeness, not as a recommendation. The recommended path is deploying
-your own batcher above — one transaction, no admin keys, no tax, source you can read.
+The batcher's `maxSafeLoops()` / `minOut` guard protects against the AFFECTION supply cap
+(1,111,111,111 Ⓐ) — near the cap, `Generate()` no-ops and the batcher reverts instead of
+silently returning fewer Ⓐ than expected. But what about the intermediates' own caps?
+
+The intermediate tokens have different cap structures (verified on-chain from the
+explorer-verified sources in [`sources/`](sources/)):
+
+| Token | Cap | Source |
+|---|---|---|
+| AFFECTION (Ⓐ) | 1,111,111,111 | `_mintToCap()` in `Conjecture` — `Generate()` no-ops at cap |
+| MATH v1.1 | 1,111,111,111 | inline in `Random()` — same cap, same no-op pattern |
+| MATH v1.0 | **none** | bare `_mint` in `Random()` (older version; accepted 1:1 by v1.1) |
+| RNG | 1,111,111,111 | inline in `Generate()` |
+| Fa (libConjecture v1.0) | 1,111,111,111 | `_mintToCap()` |
+| Faung (libDynamic v1.0) | 1,111,111,111 | `_mintToCap()` |
+| G5 (⑤) | **none** | `BuyWithDAI()` calls `_mint(msg.sender, 1e18)` unconditionally — uncapped |
+| PI (ⓟ) | **none** | `BuyWithDAI()` calls `_mint(msg.sender, 1e18)` unconditionally — uncapped |
+
+G5 and PI can be minted by anyone directly (not just via the batcher) — `G5.BuyWithDAI()`
+takes 5 pDAI and mints 1 G5, `PI.BuyWithDAI()` takes 300 pDAI and mints 1 PI. Since neither
+has a supply cap, they can always be minted regardless of how much has been minted before.
+
+**Can Ⓐ become unmintable before its own cap?** No. Because G5 and PI are uncapped, there
+are always at least two routes available to mint Ⓐ. The only route that could theoretically
+be blocked is MATH: since MATH shares the same 1,111,111,111 cap as Ⓐ and 1 MATH = 1 Ⓐ,
+someone could independently mint all 1.11B MATH (by calling `Random()` + `BuyWithDAI/USDC`
+directly) and then hold or lock it — blocking the MATH route. But the G5 and PI routes
+remain fully functional, so Ⓐ is always mintable until its own cap is reached.
+
+In all cases, if a route is unavailable the batcher transaction reverts — the pre-simulation
+catches this before the user signs, so no pStable is spent without receiving Ⓐ.

@@ -50,7 +50,7 @@ src/
   config/        chain.ts (PulseChain, NO multicall3) · rpc.ts (4 RPCs) · wagmi.ts
                  registry.ts (← affection_docs/registry/*.json) · constants.ts
                  abis/*.ts (affection, math, erc20) · routes.ts (minting graph)
-                 pulsex.ts (V2 factory/WPLS/ABIs) · mint.ts (routes + exec plan + multi-mint ABI)
+                 pulsex.ts (V1+V2 factory/WPLS/ABIs) · mint.ts (routes + token specs + gas model)
                  batcher.ts (compiled ABI + bytecode + constructor defaults)
   lib/
     rpc/         client.ts (viem fallback transport) · health.ts (status-bar probe)
@@ -59,27 +59,26 @@ src/
     verify/      facts.ts (sources.md §2 reads + checkFact)  [+ tests]
     metrics/     burns.ts (range chunking + aggregation + decode, pure)  [+ tests]
     pulsex/      math.ts (UniswapV2 spot/amountOut/slippage, pure) · pairs.ts (discovery)  [+ tests]
-    mint/        profitability.ts (swap pathfinder + profit engine, pure)  [+ tests]
+    mint/        profitability.ts (swap pathfinder + profit engine, pure) · routePlan.ts (batcher tx model)  [+ tests]
+    batcher/     validate.ts (on-chain batcher address probe)
     docs/        loader.ts (import.meta.glob of *.md/*.sol/*.json + BATCHER_SOURCES from contracts/)
     bundle/      export.ts (client-side zip: docs + registry + canonical sources + batchers/)
   hooks/         useSupply · useRpcStatus · useWallet · useVerifyChain                 · useEcosystemSupply (all 7 tokens) · useBurns (parallel chunked + cancel + time windows)
-                 · useBurnerBalances (balanceOf on known burners) · usePulseXPairs (V1 + V2 discovery)
-                 · useMintData (supply + swap graph) · useMintWallet (balances/allowances)
-                 · useMintBalances (all mint-relevant token balances)
-                 · useSimulateMint (per-step eth_call)
-                 · useSimulateDeploy (creation eth_call probe)
-                 · useTrackPendingTxs (session tx log polling)
+                 · useBurnerBalances (balanceOf on known burners) · usePulseXPairs (V1 + V2 discovery + cross-quote pairs)
+                 · useMintData (supply + swap graph) · useMintBalances (all mint-relevant token balances)
+                 · useSimulateDeploy (creation eth_call probe) · useSimulateBatcherStep (per-step eth_call)
+                 · useNetworkContext (baseFee / block fullness / block time) · useTrackPendingTxs (session tx log polling)
   stores/        ui.ts (zustand: command palette) · txLog.ts (zustand: persisted session tx log)
                  · batchers.ts (zustand: persisted per-wallet deployed-batcher memory)
   components/
     ui/          Panel · Button · Stat · CodeBlock · CopyButton · PhaseNotice · Tabs
     layout/      Header · Sidebar · RpcStatusBar · WalletButton · CommandPalette · TxPanel · Logo · nav · ErrorBoundary
     kb/          MarkdownView · VerifyOverlay
-    metrics/      SupplyGauges · BurnsPanel · BurnerBalancesPanel · RouteMap
-    mint/         AutoRouter (Tier 1) · CustomMint (Tier 2) · RawConsole (Tier 3) · RouteFlow
+    metrics/      SupplyGauges · BurnsPanel (unrendered) · BurnerBalancesPanel (unrendered) · RouteMap
+    mint/         AutoRouter (route+size selector) · BatcherBar · MintExecute · RawConsole · RouteFlow
     shared/      AddressChip · AddressCard
   routes/        router.tsx (code-based route tree) · RootLayout · Dashboard · KBIndex · KBDoc
-                 · Mint (3-tier terminal) · Batcher (P5 wizard) · Metrics  (Metrics is full P3)
+                 · Mint (2-tab: mint + raw console) · Batcher (deploy-only wizard) · Metrics  (Metrics is full P3)
   styles/        globals.css (terminal design tokens)
   main.tsx       providers: Wagmi → QueryClient → Router
 ```
@@ -100,19 +99,15 @@ deployed by default — the wizard deploys each user's own instance.
   probes them independently (lib/rpc/health.ts).
 - `Generate()` mints exactly **3** AFFECTION per call; cap is **1,111,111,111** for both AFFECTION
   and MATH. `_mintToCap` no-ops at the cap — the future batcher must clamp `loops`.
-- **The deployed multi-mint contracts do NOT match the (removed) recovered sources.**
-  There is no `multiBuyWith(address,uint256)` (0xcc93bb90) in any deployed dispatcher. The
-  real ABI (verified on-chain 2026-08 via bytecode dispatch extraction + historical tx replays):
-  MultiMath 1.1 exposes `multiBuyWithDAI/USDC(uint256)` (N = MATH tokens, 1:1 pStable);
-  MultiG5/PI expose `multiBuyWithDAI(uint256)` (5 / 300 pDAI per token); MultiAffection
-  exposes `multiBuyWithMATH/G5/PI(uint256)` (N = Generate loops → 3N Ⓐ). All five also carry
-  an admin surface — `tax()`/`taxMax()`(=15)/`setTax`/`setOwner`/`withdrawPLS`/
-  `withdrawERC20` — tax is 0 live but owner-settable; the portal reads it live
-  (`useMultiMintTax`) and `npm run verify-mint` asserts every execution selector exists in
-  the deployed bytecode. These legacy contracts are used ONLY by the `/mint` Tier-2
-  compatibility mode (registry `multi_mint_contracts`, annotated as not-maintained); the
-  supported path is the portal's own batchers in `contracts/`. The canonical
-  AFFECTION/MATH token contracts DO match their recovered sources (dispatchers verified).
+- **The legacy community multi-mint contracts are no longer interacted with by the portal
+  at all** (P12 deprecation). The `/mint` terminal drives only the portal's own batcher
+  contracts (`UnifiedAffectionBatcher` / `AtomicArbBatcher` in `contracts/`); the
+  `MULTI_MINT_CONTRACTS` registry block, `multiMintAbi`, `buildMintPlan` /
+  `buildMintPlanFromIntermediate`, `useMultiMintTax` / `useMintWallet` / `useSimulateMint`,
+  and the old `CustomMint` Tier-2 component have all been removed. The recovered community
+  multi-mint sources remain under `docs/multi-mint-contracts-src/` (gitignored) for
+  historical reference only. The canonical AFFECTION/MATH/G5/PI token contracts DO match
+  their recovered sources (dispatchers verified).
 - `/kb/$doc` rendering requires the `/kb` route to be a **layout route** with an index child
   (`src/routes/router.tsx`): the layout renders `<Outlet />`, the index route carries `KBIndex`,
   `$doc` carries `KBDoc`. If KBIndex is attached directly to the parent `/kb` route, the child
@@ -351,6 +346,74 @@ See `docs/ARCHITECTURE.md §7` for the full phase plan. Current status:
     already had it). Full addresses remain in the markdown docs (selectable).
   - **Tests**: 146 total (was 145; +1 for the 0x369 burn-address decode). Clean typecheck/lint/build;
     dev smoke 200 on all routes. Trust posture held throughout.
+- **P12 — DONE (legacy multi-mint deprecation + /mint rework + /metrics cleanup).**
+  - **Legacy community multi-mints fully removed** — confirmed `/mint` Tier-2 was driving the
+    legacy `MultiMath/G5/PI` + `MultiAffection` contracts (the official AFFECTION
+    `BuyWith*` only drains; it does not call `Generate()`, so the legacy batchers existed to
+    loop the charge step). Removed all portal interaction with them: `MULTI_MINT_CONTRACTS`
+    registry block + `MultiMintContract` type, `multiMintAbi` / `MultiMintFn`, `buildMintPlan` /
+    `buildMintPlanFromIntermediate`, the `multiMint` / `mintFn` fields on `INTERMEDIATES`,
+    `useMultiMintTax` / `useMintWallet` / `useSimulateMint`, the `CustomMint` Tier-2 component,
+    `src/config/mint.test.ts` (rewritten for the retained config), and the `multi_mint_contracts`
+    + `multi_mint_per_loop` blocks from `affection_docs/registry/*.json`. The recovered sources
+    stay under `docs/multi-mint-contracts-src/` (gitignored) for historical reference only.
+  - **`/mint` terminal reworked to 2 tabs** — Tab 1 "mint" is a single unified flow: a batcher
+    bar (remembers / validates / deploys-link), a route+size selector (evolved AutoRouter with
+    profitability table + RouteFlow, auto-selects the best route, reports the selection live),
+    and an execute panel (`MintExecute`) that drives the user's OWN batcher in both `mintFromStable`
+    (full) and `multiBuyWith` (from-intermediate) modes — approve + mint on the same tab so
+    consecutive mints never jump tabs. Tab 2 is the Raw Console (unchanged). New components:
+    `BatcherBar.tsx`, `MintExecute.tsx`; `AutoRouter.tsx` reworked. `Mint.tsx` lifts the
+    selection + active batcher into shared state.
+  - **`/batcher` slimmed to deploy-only** — keeps choose-variant → constructor params →
+    simulate+deploy + the inline source view + the deployed-batcher memory save-on-confirm.
+    Removed the "already have a batcher?" panel + the "mint via your batcher" panel (both moved
+    to `/mint`) and the "older community batchers (non-endorsed)" panel. Added a post-deploy
+    "go to /mint" link. `validateBatcherAddress` + `BATCHER_PROBE_ABI` extracted to
+    `src/lib/batcher/validate.ts`; `useSimulateBatcherStep` extracted to
+    `src/hooks/useSimulateBatcherStep.ts` (shared by `/batcher` and `/mint`).
+  - **`routePlan.ts` reframed to the batcher model** — execution is 1 atomic tx per batch (not
+    the old 2-tx intermediate-then-AFFECTION split); `totalTxs` = ceil(loops /
+    maxLoopsPerTx(intermediate)); `approvals` = 1 (one-time per session); the old
+    `intermediateTokensNeeded` / `intermediateMintCalls` / `affectionMintCalls` /
+    `piBugWarning` fields are gone (the batcher loops internally — no per-call PI bug).
+  - **`/metrics` cleanup** — removed the burns section (`BurnsPanel` + `BurnerBalancesPanel` +
+    their explanatory paragraphs) from the metrics page; the underlying libs/hooks/tests are
+    kept in place, just unrendered, for later re-enablement. Added the cross-quote pairs
+    (WPLS/pDAI, WPLS/pUSDC, pDAI/pUSDC) to `usePulseXPairs` so the route map includes the
+    on-ramp from native to the pStables minting needs (discovered on BOTH V1 + V2, consistent
+    with the /mint profitability swap graph).
+  - **Docs** — `04_multi_mint_contracts.md` legacy section removed + wizard wording updated
+    (minting now at `/mint`); `sources.md` legacy blockquote removed; `07_interaction_and_tools.md`
+    portal-section updated; `AGENTS.md` engineering-fact corrected + this entry added.
+  - **Tests**: 184 total (was 188; net −4 — the 14 legacy multi-mint selector/plan tests were
+    deleted, 20 new config + routePlan tests added). Clean typecheck/lint/build. The
+    `verify-mint-profitability` script now checks the compiled batcher ABI instead of the
+    legacy bytecode dispatchers. Trust posture held: every approve + mint + deploy is still
+    explicit + pre-simulated; nothing auto-signs.
+- **P13 — DONE (comprehensive audit + hardening).** Full code review and security audit
+  across all 50+ source files (Solidity contracts, mint engine, RPC/chain, wallet
+  integration, frontend security, deploy config). No CRITICAL or HIGH issues found;
+  2 MEDIUM + 4 LOW fixes shipped:
+  - **`Content-Security-Policy` header added** to `vercel.json` — restricts script-src,
+    connect-src (RPC whitelist), frame-ancestors, font/img sources. Defense-in-depth for
+    a wallet-connected dApp. `style-src 'unsafe-inline'` required by Tailwind.
+  - **`minOut` set to expected output** in `MintExecute.tsx` — was `0n`, which silently
+    allowed cap-clamped mints to return a fraction of the expected Ⓐ. Now set to
+    `loops * 3n * 10n**18n` so near-cap mints revert instead of surprising the user.
+    Both the simulation args and the write call args updated.
+  - **Remembered batcher re-validated on-chain** on "use it" click in `BatcherBar.tsx` —
+    was a straight restore from localStorage, now calls `validateBatcherAddress()` first
+    (defense-in-depth against tampered localStorage).
+  - **Constructor param address validation** in `Batcher.tsx` — per-field `isAddress()`
+    check with inline error/✓ indicators and deploy button blocked on invalid params.
+  - **Payable functions handled** in `RawConsole.tsx` — split `isWrite` into
+    `isNonpayableWrite` / `isPayable`; the send button is only shown for nonpayable
+    functions; payable functions get an info note ("sending PLS not supported in this
+    console, use simulate").
+  - **Boot splash removed** from DOM in `main.tsx` — `document.getElementById("boot")?.remove()`
+    before React mounts, so the pre-hydration splash doesn't linger as a hidden element.
+  - 190 unit tests, clean typecheck/lint/build.
 
 ## Conventions
 

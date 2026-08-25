@@ -1,115 +1,107 @@
-import { toFunctionSelector } from "viem";
 import { describe, expect, it } from "vitest";
 import {
+  EXEC_ROUTES,
+  GAS_PER_LOOP,
+  GAS_PER_LOOP_INTER,
   INTERMEDIATES,
-  MULTI_AFFECTION_ADDR,
-  MULTI_G5_ADDR,
-  MULTI_MATH_ADDR,
-  MULTI_PI_ADDR,
-  type MintStep,
-  buildMintPlan,
-  buildMintPlanFromIntermediate,
-  multiMintAbi,
+  MINT_ROUTES,
+  STABLES,
+  maxLoopsPerTx,
 } from "./mint";
-import { PDAI_ADDR } from "./registry";
+import { G5_ADDR, MATH_ADDR, PDAI_ADDR, PI_ADDR, PUSDC_ADDR } from "./registry";
 
-// The deployed multi-mint selectors, verified on-chain 2026-08 by bytecode dispatch
-// extraction (PUSH4 <sel> EQ in eth_getCode) + historical tx replays. See
-// affection_docs/04_multi_mint_contracts.md. These tests pin the portal's execution ABI
-// to the deployed bytecode — a drift here means every Tier-2 mint step would revert.
-const DEPLOYED_SELECTORS: Record<string, `0x${string}`> = {
-  multiBuyWithDAI: "0x393a8a07",
-  multiBuyWithUSDC: "0xbc9820c1",
-  multiBuyWithMATH: "0xa791de3d",
-  multiBuyWithG5: "0xf8801ecf",
-  multiBuyWithPI: "0x063cbdea",
-};
+// Pins the retained mint config (the portal's own batcher model). The legacy multi-mint
+// selectors/addresses/plan builders were removed in P12 — minting now goes through the
+// UnifiedAffectionBatcher / AtomicArbBatcher from contracts/, driven by /mint.
 
-const approveOf = (s: MintStep) => (s.kind === "approve" ? s : null);
-const mintOf = (s: MintStep) => (s.kind !== "approve" ? s : null);
+describe("MINT_ROUTES", () => {
+  it("covers the three clean routes × their accepted stables (4 rows)", () => {
+    const ids = MINT_ROUTES.map((r) => r.id).sort();
+    expect(ids).toEqual(["G5·pDAI", "MATH·pDAI", "MATH·pUSDC", "PI·pDAI"]);
+  });
 
-function planOrThrow(...args: Parameters<typeof buildMintPlan>): MintStep[] {
-  const plan = buildMintPlan(...args);
-  if (!plan) throw new Error(`plan unexpectedly null for ${args.join(", ")}`);
-  return plan;
-}
+  it("every route has the verified 1 pStable / 1 Ⓐ floor (stablePerAFFECTION = 1n)", () => {
+    for (const r of MINT_ROUTES) {
+      expect(r.stablePerAFFECTION).toBe(1n);
+    }
+  });
 
-describe("multiMintAbi matches the deployed bytecode dispatchers", () => {
-  for (const entry of multiMintAbi) {
-    it(`${entry.name} encodes to the verified selector ${DEPLOYED_SELECTORS[entry.name]}`, () => {
-      expect(toFunctionSelector(entry as never)).toBe(DEPLOYED_SELECTORS[entry.name]);
-    });
-  }
+  it("perLoop × affectionPerIntermediate = 3 (the Ⓐ minted per Generate loop)", () => {
+    const E18 = 10n ** 18n;
+    for (const r of MINT_ROUTES) {
+      const perLoopWhole = Number(r.perLoop / E18);
+      // G5 perLoop is 0.6e18 — handle the fractional case
+      const perLoopScaled = Number((r.perLoop * 100n) / E18) / 100;
+      expect(perLoopScaled * r.affectionPerIntermediate).toBeCloseTo(3, 2);
+      expect(perLoopWhole >= 0).toBe(true);
+    }
+  });
 
-  it("contains no address-dispatching multiBuyWith (not in any deployed contract)", () => {
-    const names = multiMintAbi.map((e) => e.name) as string[];
-    expect(names).not.toContain("multiBuyWith");
+  it("loop granularity matches the whole-token mint size (MATH=1, G5=5, PI=100)", () => {
+    const find = (id: string) => MINT_ROUTES.find((r) => r.id === id);
+    expect(find("MATH·pDAI")?.loopGranularity).toBe(1n);
+    expect(find("G5·pDAI")?.loopGranularity).toBe(5n);
+    expect(find("PI·pDAI")?.loopGranularity).toBe(100n);
   });
 });
 
-describe("buildMintPlan", () => {
-  it("MATH·pDAI: 4 steps, per-token fns, arg = whole MATH tokens then loops", () => {
-    const [a1, m1, a2, m2] = planOrThrow("MATH", "pDAI", 100n);
-    expect(approveOf(a1)?.spender).toBe(MULTI_MATH_ADDR);
-    expect(approveOf(a1)?.token).toBe(PDAI_ADDR);
-    expect(mintOf(m1)?.calldata.address).toBe(MULTI_MATH_ADDR);
-    expect(mintOf(m1)?.calldata.functionName).toBe("multiBuyWithDAI");
-    expect(mintOf(m1)?.calldata.args).toEqual([300n]); // 3 MATH per loop × 100 loops
-    expect(approveOf(a2)?.spender).toBe(MULTI_AFFECTION_ADDR);
-    expect(mintOf(m2)?.calldata.address).toBe(MULTI_AFFECTION_ADDR);
-    expect(mintOf(m2)?.calldata.functionName).toBe("multiBuyWithMATH");
-    expect(mintOf(m2)?.calldata.args).toEqual([100n]); // loops = Generate() calls → 300 Ⓐ
+describe("INTERMEDIATES + STABLES", () => {
+  it("intermediates point at the canonical on-chain token addresses", () => {
+    expect(INTERMEDIATES.MATH.address).toBe(MATH_ADDR);
+    expect(INTERMEDIATES.G5.address).toBe(G5_ADDR);
+    expect(INTERMEDIATES.PI.address).toBe(PI_ADDR);
   });
 
-  it("MATH·pUSDC uses multiBuyWithUSDC", () => {
-    const plan = planOrThrow("MATH", "pUSDC", 10n);
-    expect(mintOf(plan[1] ?? plan[0])?.calldata.functionName).toBe("multiBuyWithUSDC");
-    expect(mintOf(plan[1] ?? plan[0])?.calldata.args).toEqual([30n]);
+  it("stables point at the canonical pDAI / pUSDC addresses", () => {
+    expect(STABLES.pDAI.address).toBe(PDAI_ADDR);
+    expect(STABLES.pUSDC.address).toBe(PUSDC_ADDR);
+    expect(STABLES.pDAI.decimals).toBe(18);
+    expect(STABLES.pUSDC.decimals).toBe(6);
   });
 
-  it("G5·pDAI: multiBuyWithDAI(0.6×loops) then multiBuyWithG5(loops)", () => {
-    const plan = planOrThrow("G5", "pDAI", 100n);
-    expect(approveOf(plan[0] as MintStep)?.spender).toBe(MULTI_G5_ADDR);
-    expect(mintOf(plan[1] as MintStep)?.calldata.address).toBe(MULTI_G5_ADDR);
-    expect(mintOf(plan[1] as MintStep)?.calldata.functionName).toBe("multiBuyWithDAI");
-    expect(mintOf(plan[1] as MintStep)?.calldata.args).toEqual([60n]); // 0.6 G5 per loop × 100
-    expect(mintOf(plan[3] as MintStep)?.calldata.functionName).toBe("multiBuyWithG5");
-    expect(mintOf(plan[3] as MintStep)?.calldata.args).toEqual([100n]);
-  });
-
-  it("PI·pDAI: multiBuyWithDAI(loops/100) then multiBuyWithPI(loops)", () => {
-    const plan = planOrThrow("PI", "pDAI", 300n);
-    expect(approveOf(plan[0] as MintStep)?.spender).toBe(MULTI_PI_ADDR);
-    expect(mintOf(plan[1] as MintStep)?.calldata.functionName).toBe("multiBuyWithDAI");
-    expect(mintOf(plan[1] as MintStep)?.calldata.args).toEqual([3n]); // 0.01 PI per loop × 300
-    expect(mintOf(plan[3] as MintStep)?.calldata.functionName).toBe("multiBuyWithPI");
-    expect(mintOf(plan[3] as MintStep)?.calldata.args).toEqual([300n]);
-  });
-
-  it("G5/PI via pUSDC is not executable (deployed contracts only accept pDAI)", () => {
-    expect(buildMintPlan("G5", "pUSDC", 100n)).toBeNull();
-    expect(buildMintPlan("PI", "pUSDC", 300n)).toBeNull();
-  });
-
-  it("returns null when loops rounds down to zero intermediate tokens", () => {
-    expect(buildMintPlan("PI", "pDAI", 99n)).toBeNull(); // 0.99 PI → 0 whole
-    expect(buildMintPlanFromIntermediate("PI", 99n)).toBeNull();
-  });
-
-  it("approvals are one-time max approvals to the right spenders", () => {
-    const plan = planOrThrow("MATH", "pDAI", 5n);
-    const MAX = 2n ** 256n - 1n;
-    expect(approveOf(plan[0] as MintStep)?.calldata.args).toEqual([MULTI_MATH_ADDR, MAX]);
-    expect(approveOf(plan[2] as MintStep)?.calldata.args).toEqual([MULTI_AFFECTION_ADDR, MAX]);
+  it("MATH accepts both pDAI + pUSDC; G5 + PI only accept pDAI", () => {
+    expect(INTERMEDIATES.MATH.acceptedStables).toEqual(["pDAI", "pUSDC"]);
+    expect(INTERMEDIATES.G5.acceptedStables).toEqual(["pDAI"]);
+    expect(INTERMEDIATES.PI.acceptedStables).toEqual(["pDAI"]);
   });
 });
 
-describe("buildMintPlanFromIntermediate", () => {
-  it("2 steps: approve intermediate → MultiAffection per-token fn with loops", () => {
-    const plan = buildMintPlanFromIntermediate("MATH", 7n);
-    expect(plan).toHaveLength(2);
-    expect(approveOf((plan ?? [])[0] as MintStep)?.token).toBe(INTERMEDIATES.MATH.address);
-    expect(mintOf((plan ?? [])[1] as MintStep)?.calldata.functionName).toBe("multiBuyWithMATH");
-    expect(mintOf((plan ?? [])[1] as MintStep)?.calldata.args).toEqual([7n]);
+describe("EXEC_ROUTES", () => {
+  it("is the intersection of intermediates × accepted stables", () => {
+    const ids = EXEC_ROUTES.map((r) => `${r.intermediate}·${r.stable}`).sort();
+    expect(ids).toEqual(["G5·pDAI", "MATH·pDAI", "MATH·pUSDC", "PI·pDAI"]);
+  });
+});
+
+describe("gas model", () => {
+  it("GAS_PER_LOOP matches the measured on-chain per-loop costs", () => {
+    expect(GAS_PER_LOOP.MATH).toBe(148_500n);
+    expect(GAS_PER_LOOP.G5).toBe(46_400n);
+    expect(GAS_PER_LOOP.PI).toBe(40_200n);
+  });
+
+  it("GAS_PER_LOOP_INTER is just Generate() ≈ 39.8k (no intermediate-mint leg)", () => {
+    expect(GAS_PER_LOOP_INTER).toBe(39_800n);
+  });
+
+  it("maxLoopsPerTx = floor(40.5M / gas-per-loop), with ~10% block headroom", () => {
+    expect(maxLoopsPerTx("MATH")).toBe(40_500_000n / 148_500n);
+    expect(maxLoopsPerTx("G5")).toBe(40_500_000n / 46_400n);
+    expect(maxLoopsPerTx("PI")).toBe(40_500_000n / 40_200n);
+  });
+
+  it("maxLoopsPerTx in inter mode uses GAS_PER_LOOP_INTER for all routes", () => {
+    expect(maxLoopsPerTx("MATH", "inter")).toBe(40_500_000n / GAS_PER_LOOP_INTER);
+    expect(maxLoopsPerTx("G5", "inter")).toBe(40_500_000n / GAS_PER_LOOP_INTER);
+    expect(maxLoopsPerTx("PI", "inter")).toBe(40_500_000n / GAS_PER_LOOP_INTER);
+    // inter mode fits ~3.7x more MATH loops per tx than full mode
+    expect(maxLoopsPerTx("MATH", "inter")).toBeGreaterThan(maxLoopsPerTx("MATH", "full") * 3n);
+  });
+
+  it("the MATH route caps at ~270 loops/tx in full mode, matching the measured receipt", () => {
+    // tx 0xc8fca2a5…21921f: 100-loop MATH mint used 14,751,057 gas ≈ 147.5k/loop
+    expect(maxLoopsPerTx("MATH") * GAS_PER_LOOP.MATH).toBeLessThanOrEqual(40_500_000n);
+    expect(maxLoopsPerTx("MATH")).toBeGreaterThan(250n);
+    expect(maxLoopsPerTx("MATH")).toBeLessThan(300n);
   });
 });

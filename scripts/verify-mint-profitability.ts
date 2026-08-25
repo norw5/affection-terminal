@@ -114,54 +114,34 @@ async function main() {
     `\nrecommended: ${best ? best.route.id + "  (" + bpsPct(best.profitBps) + ", " + (best.profit >= 0n ? "+" : "-") + formatUnits(best.profit < 0n ? -best.profit : best.profit, STABLES[best.route.stable].decimals, 2) + " " + best.route.stable + ")" : "none (no DEX exit)"}`,
   );
 
-  // ── Execution-ABI verification ────────────────────────────────────────────────
-  // The Tier-2 mint flow drives the DEPLOYED community multi-mints via per-token
-  // functions (multiBuyWithDAI/USDC/MATH/G5/PI). Verify each function's 4-byte selector
-  // actually appears in the deployed bytecode's dispatcher (PUSH4 <sel> ... EQ), and read
-  // the live owner-settable tax. This guards against the recovered sources drifting from
-  // the deployed contracts (which is exactly how the multiBuyWith(address,uint256) bug
-  // happened — that selector is in no deployed contract).
-  const { INTERMEDIATES, MULTI_AFFECTION_ADDR, multiMintAbi } = await import("../src/config/mint");
+  // ── Batch-ABI sanity check ────────────────────────────────────────────────────
+  // Minting execution now goes through the portal's own batcher contracts (driven from
+  // /mint), not the legacy community multi-mints. Verify the compiled batcher ABI still
+  // exposes the entry points /mint uses (mintFromStable + multiBuyWith), and that the
+  // canonical address immutables match the live registry.
+  const { BATCHERS } = await import("../src/config/batcher");
   const { toFunctionSelector } = await import("viem");
 
-  const checks: Array<{ contract: string; address: `0x${string}`; fn: string }> = [];
-  for (const im of Object.values(INTERMEDIATES)) {
-    for (const stable of im.acceptedStables) {
-      checks.push({ contract: `Multi ${im.symbol}`, address: im.multiMint, fn: im.mintFn[stable] });
-    }
-  }
-  for (const fn of ["multiBuyWithMATH", "multiBuyWithG5", "multiBuyWithPI"] as const) {
-    checks.push({ contract: "Multi AFFECTION", address: MULTI_AFFECTION_ADDR, fn });
-  }
-
-  console.log("\nexecution ABI — deployed bytecode dispatch check:");
+  const needed = ["mintFromStable", "multiBuyWith", "maxSafeLoops", "AFFECTION", "PDAI"] as const;
+  console.log("\nbatcher ABI — portal entry points present in the compiled artifact:");
   let abiOk = true;
-  for (const c of checks) {
-    const code = (await client.getCode({ address: c.address })) ?? "0x";
-    const bytes = code.slice(2);
-    const sel = toFunctionSelector(
-      multiMintAbi.find((a) => a.name === c.fn)! as never,
-    ).slice(2);
-    const present = bytes.includes(`63${sel}14`);
+  for (const name of needed) {
+    const present = BATCHERS["mint-only"].abi.some(
+      (e) => (e as { type: string; name?: string }).type === "function" && (e as { name: string }).name === name,
+    );
     if (!present) abiOk = false;
-    console.log(`  ${present ? "OK " : "MISSING"} ${c.contract}. ${c.fn} (0x${sel})`);
+    console.log(`  ${present ? "OK " : "MISSING"} ${name}`);
   }
-
-  const taxAbi = [
-    { type: "function", name: "tax", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
-  ] as const;
-  const taxAddrs = new Set(checks.map((c) => c.address));
-  console.log("\nmulti-mint tax (owner-settable, live read):");
-  for (const addr of taxAddrs) {
-    try {
-      const tax = (await client.readContract({ address: addr, abi: taxAbi, functionName: "tax" })) as bigint;
-      console.log(`  ${addr} tax=${tax.toString()}${tax > 0n ? "  ⚠ NON-ZERO — effective cost is higher than the floor math above" : ""}`);
-    } catch {
-      console.log(`  ${addr} tax read failed`);
-    }
-  }
+  const selMint = toFunctionSelector(
+    BATCHERS["mint-only"].abi.find((e) => (e as { name?: string }).name === "mintFromStable") as never,
+  );
+  const selMulti = toFunctionSelector(
+    BATCHERS["mint-only"].abi.find((e) => (e as { name?: string }).name === "multiBuyWith") as never,
+  );
+  console.log(`  mintFromStable selector = ${selMint}`);
+  console.log(`  multiBuyWith selector   = ${selMulti}`);
   if (!abiOk) {
-    console.error("\n✗ execution ABI mismatch — the portal's mint plan would revert on-chain");
+    console.error("\n✗ batcher ABI mismatch — /mint would not be able to drive the batcher");
     process.exit(1);
   }
 }

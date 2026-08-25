@@ -64,13 +64,6 @@ export const PDAI_ADDR = mustToken("pDAI").address;
 export const PUSDC_ADDR = mustToken("pUSDC").address;
 export const PUSDT_ADDR = mustToken("pUSDT").address;
 
-export type MultiMintContract = { name: string; address: Address };
-// Legacy community-deployed batchers — used only by the /mint Tier-2 compatibility mode.
-// See the "$comment" in addresses.json: not maintained or endorsed by the portal.
-export const MULTI_MINT_CONTRACTS = (
-  addressesData.multi_mint_contracts as { contracts: MultiMintContract[] }
-).contracts;
-
 // Ecosystem constants block.
 export const MOTZKIN_PRIME = BigInt(addressesData.constants.MotzkinPrime);
 export const AFFECTION_CAP = BigInt(addressesData.constants.AFFECTION_cap); // whole tokens (1,111,111,111)

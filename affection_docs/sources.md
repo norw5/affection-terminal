@@ -21,18 +21,32 @@ committed in [`sources/`](sources/). The relevant mappings:
 | `sources/` file | Role | Key facts it anchors |
 |---|---|---|
 | `affection.sol`   | The `Affection` contract        | `BuyWithG5/PI/MATH/Fa/Faung` rates; `Generate()` mints 3; inherits `Dynamic` |
-| `conjecture.sol`  | The `Conjecture` base           | `_mintToCap()`; cap `1,111,111,111`; `aa = atropaMath(libAtropaMathContract)`; `MotzkinPrime` |
-| `dynamic.sol`     | The `Dynamic` base              | `Mu` (Faung) state machine; `OpenManifolds`, `React` (which calls `_mintToCap`) |
+| `conjecture.sol`  | The `Conjecture` abstract base  | `_mintToCap()`; cap `1,111,111,111`; `aa = atropaMath(libAtropaMathContract)`; `MotzkinPrime` |
+| `dynamic.sol`     | The `Dynamic` abstract base     | `Mu` (Faung) state machine; `OpenManifolds`, `React` (which calls `_mintToCap`) |
 | `faung.sol`       | `struct Faung` (the `Mu` state)  | Fields: `Rod`, `Cone`, greek‑letter registers |
 | `fa.sol`          | `struct Fa` (a rod)             | Fields: `Base`, `Secret`, `Signal`, …, `Alpha`, `Nu` |
 | `addresses.sol`   | The address constants          | `libAtropaMathContract`, `PIContract`, `G5Contract`, `dai/usdc/usdt`, etc. |
+| `math_v1_1_atropaMath.sol` | MATH v1.1 token (`0xB680…f05D`) | `Random()` mints 1 MATH with cap `1,111,111,111`; `BuyWithDAI/USDC` drain; `BuyWithG5/PI/MATH` sub-routes |
+| `math_v1_0_atropaMath.sol` | MATH v1.0 token (`0x5EF3…A0DC`) | Older MATH; `Random()` mints 1 MATH **uncapped**; accepted 1:1 by v1.1 `BuyWithMATH` |
+| `G5_atropacoin.sol` | G5 token (`0x2fc6…e7D2`) | `BuyWithDAI()` mints 1 G5 for 5 pDAI **uncapped**; `contract atropacoin is ERC20, ERC20Burnable, Ownable` |
+| `PI_atropacoin.sol` | PI token (`0xA226…073C`) | `BuyWithDAI()` mints 1 PI for 300 pDAI **uncapped**; same `atropacoin` contract, different constructor |
+| `rng.sol` | RNG token (`0xa96B…2143`) | `Generate()` mints 1 RNG with cap `1,111,111,111`; the primitive RNG that MATH.Random() calls |
+| `fa_v1_0.sol` | Fa / libConjecture v1.0 (`0x232a…675A`) | Concrete `Conjecture` token with `_mintToCap` (cap `1,111,111,111`); `BuyWithG5/PI/MATH` redeem |
+| `faung_v1_0.sol` | Faung / libDynamic v1.0 (`0x73A1…d10d`) | Concrete `Dynamic` token with `_mintToCap` (cap `1,111,111,111`); `BuyWithG5/PI/MATH/Fa` redeem |
+
+The abstract bases (`conjecture.sol`, `dynamic.sol`) are the inheritance chain that
+AFFECTION uses; the concrete token files (`fa_v1_0.sol`, `faung_v1_0.sol`) are the
+standalone deployed contracts at their own addresses. Both are included for completeness.
 
 The MATH / G5 / PI contract sources are verified on the PulseChain scanner (Blockscout)
-and cross‑checked against the verified source committed in [`sources/`](sources/):
-- G5: `0x2fc636E7fDF9f3E8d61033103052079781a6e7D2`
-- PI: `0xA2262D7728C689526693aE893D0fD8a352C7073C`
-- MATH v1.1: `0xB680F0cc810317933F234f67EB6A9E923407f05D`
-- RNG: `0xa96BcbeD7F01de6CEEd14fC86d90F21a36dE2143`
+and committed in [`sources/`](sources/):
+- G5: `0x2fc636E7fDF9f3E8d61033103052079781a6e7D2` — `G5_atropacoin.sol`
+- PI: `0xA2262D7728C689526693aE893D0fD8a352C7073C` — `PI_atropacoin.sol`
+- MATH v1.1: `0xB680F0cc810317933F234f67EB6A9E923407f05D` — `math_v1_1_atropaMath.sol`
+- MATH v1.0: `0x5EF3011243B03f817223A19f277638397048A0DC` — `math_v1_0_atropaMath.sol`
+- RNG: `0xa96BcbeD7F01de6CEEd14fC86d90F21a36dE2143` — `rng.sol`
+- Fa: `0x232a27AB6941281b3f474Fe5fF7Cc89816fB675A` — `fa_v1_0.sol`
+- Faung: `0x73A19FaFb359faf519C9707b781dfdB88407d10d` — `faung_v1_0.sol`
 
 The portal's own batcher contracts (`UnifiedAffectionBatcher.sol`,
 `AtomicArbBatcher.sol` — see [`04_multi_mint_contracts.md`](04_multi_mint_contracts.md))
@@ -40,13 +54,6 @@ are authored and maintained by this portal. Their sources ship in the knowledge 
 export; the portal re-asserts on every release that the compiled artifacts match the 
 committed source 
 (`npm run compile-batcher` + `npm run verify-batcher` in the portal repository).
-
-> Older community-deployed "multi-mint" batchers exist on-chain. Their sources are
-> deliberately **not** part of this knowledge base or its export bundle: the deployed
-> bytecode does not match the source copies that circulated, and the deployed contracts
-> carry an admin surface those copies do not describe. The portal neither maintains nor
-> endorses them; see the note at the end of
-> [`04_multi_mint_contracts.md`](04_multi_mint_contracts.md).
 
 ## 2 · Live RPC reads (re‑verify these)
 

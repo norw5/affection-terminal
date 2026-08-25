@@ -35,6 +35,26 @@ const FACTORIES: Array<{ version: "V1" | "V2"; address: `0x${string}` }> = [
   { version: "V1", address: PULSEX_V1_FACTORY },
 ];
 
+// Cross-quote pairs (stable ↔ native ↔ stable): the on-ramp from WPLS to the pStables that
+// minting needs, plus the pDAI/pUSDC stable-stable swap. Mirrors the pairs the /mint
+// profitability engine feeds into its swap graph (useMintData) so the route map and the
+// auto-router share a consistent view. Discovered on BOTH V1 + V2. Built from QUOTE_TOKENS
+// combinations (i < j) so each pair appears once, ordered native-first for the label.
+const CROSS_QUOTE_PAIRS: Array<{
+  base: { symbol: string; name: string; address: `0x${string}`; decimals: number };
+  quote: { symbol: string; address: `0x${string}`; decimals: number };
+}> = [];
+for (let i = 0; i < QUOTE_TOKENS.length; i++) {
+  for (let j = i + 1; j < QUOTE_TOKENS.length; j++) {
+    const a = QUOTE_TOKENS[i];
+    const b = QUOTE_TOKENS[j];
+    CROSS_QUOTE_PAIRS.push({
+      base: { symbol: a.symbol, name: a.symbol, address: a.address, decimals: a.decimals },
+      quote: { symbol: b.symbol, address: b.address, decimals: b.decimals },
+    });
+  }
+}
+
 async function fetchPair(
   factory: { version: "V1" | "V2"; address: `0x${string}` },
   base: {
@@ -107,8 +127,8 @@ export function usePulseXPairs() {
         }
       })();
 
-      const pairResults = await Promise.all(
-        ECOSYSTEM_TOKENS.flatMap((base) =>
+      const pairResults = await Promise.all([
+        ...ECOSYSTEM_TOKENS.flatMap((base) =>
           FACTORIES.flatMap((factory) =>
             QUOTE_TOKENS.map(async (quote) => {
               if (base.address.toLowerCase() === quote.address.toLowerCase())
@@ -117,7 +137,10 @@ export function usePulseXPairs() {
             }),
           ),
         ),
-      );
+        ...CROSS_QUOTE_PAIRS.flatMap((pq) =>
+          FACTORIES.map((factory) => fetchPair(factory, pq.base, pq.quote)),
+        ),
+      ]);
 
       const pairs = pairResults.map((r) => r.pair).filter((p): p is EcosystemPair => p !== null);
       const failedReads = pairResults.filter((r) => r.failed).length;

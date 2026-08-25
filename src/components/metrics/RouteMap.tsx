@@ -163,11 +163,12 @@ export function RouteMap() {
 
         <p className="text-xs leading-snug text-text-faint">
           Discovered via <code>factory.getPair(token, quote)</code> for each ecosystem token ×
-          WPLS/pDAI/pUSDC on BOTH PulseX V2 and V1, then <code>pair.getReserves()</code>. Price =
-          spot (<code>reserveOut / reserveIn</code>); the 0.3% swap fee + slippage are not included
-          (the auto-router in <code>/mint</code> computes effective prices across both venues).
-          Pairs with zero reserves are filtered out. No multicall3 dependency — reads fan out to
-          parallel <code>eth_call</code>s.
+          WPLS/pDAI/pUSDC on BOTH PulseX V2 and V1, plus the cross-quote pairs (WPLS/pDAI,
+          WPLS/pUSDC, pDAI/pUSDC — the on-ramp from native to the pStables minting needs), then{" "}
+          <code>pair.getReserves()</code>. Price = spot (<code>reserveOut / reserveIn</code>); the
+          0.3% swap fee + slippage are not included (the auto-router in <code>/mint</code> computes
+          effective prices across both venues). Pairs with zero reserves are filtered out. No
+          multicall3 dependency — reads fan out to parallel <code>eth_call</code>s.
         </p>
       </div>
     </Panel>

@@ -25,10 +25,10 @@ pDAI/pUSDC (and pUSDT where it works), and Ⓐ is then minted from those.
 | **Decimals** | 18 |
 | **Owner** | `0x8B090509eAe0fEB4A0B934de1b4345161fA9a62d` (the `INDEPENDENCE` contract) |
 | **Verified** | yes |
-| **Still mintable** | yes |
+| **Still mintable** | yes (uncapped — no supply cap) |
 | **Supply (at writing)** | ~1.2M G5 |
 
-Contract: `contract atropacoin is ERC20, ERC20Burnable, Ownable`. Minting functions:
+Contract: `contract atropacoin is ERC20, ERC20Burnable, Ownable`. No supply cap — `BuyWithDAI()` calls `_mint(msg.sender, 1e18)` unconditionally. Minting functions:
 
 | Function | Takes | Mints | Rate |
 |---|---|---|---|
@@ -51,10 +51,10 @@ Each call mints exactly **1 G5** (no `amount` argument), so to mint N G5 you cal
 | **Decimals** | 18 |
 | **Owner** | `0x8B090509eAe0fEB4A0B934de1b4345161fA9a62d` (the `INDEPENDENCE` contract) |
 | **Verified** | yes |
-| **Still mintable** | yes |
+| **Still mintable** | yes (uncapped — no supply cap) |
 | **Supply (at writing)** | ~95,927 PI |
 
-Same shape as G5, but 300×:
+Same shape as G5, but 300×. Also uncapped — `BuyWithDAI()` calls `_mint(msg.sender, 1e18)` unconditionally.
 
 | Function | Takes | Mints | Rate |
 |---|---|---|---|

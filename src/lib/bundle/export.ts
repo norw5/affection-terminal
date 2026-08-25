@@ -1,4 +1,4 @@
-import { BATCHER_SOURCES, DOCS, REGISTRY_FILES, SOURCES } from "@/lib/docs/loader";
+import { DOCS, loadBatcherSources, loadRegistryFiles, loadSources } from "@/lib/docs/loader";
 import { saveAs } from "file-saver";
 // Client-side bundle export for the Developer Hub (Module A). Assembles the committed
 // knowledge base (markdown), the machine-readable registry JSON, the canonical Solidity
@@ -11,14 +11,21 @@ export async function exportKnowledgeBundle(): Promise<void> {
   const docs = zip.folder("docs");
   for (const d of DOCS) docs?.file(`${d.filename}.md`, d.content);
 
-  const registry = zip.folder("registry");
-  for (const f of REGISTRY_FILES) registry?.file(f.filename, f.content);
+  // Lazy-load the heavy .sol/.json sources only when exporting (keeps the main chunk small).
+  const [registryFiles, sources, batcherSources] = await Promise.all([
+    loadRegistryFiles(),
+    loadSources(),
+    loadBatcherSources(),
+  ]);
 
-  const sources = zip.folder("sources");
-  for (const s of SOURCES) sources?.file(s.filename, s.content);
+  const registry = zip.folder("registry");
+  for (const f of registryFiles) registry?.file(f.filename, f.content);
+
+  const sourcesFolder = zip.folder("sources");
+  for (const s of sources) sourcesFolder?.file(s.filename, s.content);
 
   const batchers = zip.folder("batchers");
-  for (const b of BATCHER_SOURCES) batchers?.file(b.filename, b.content);
+  for (const b of batcherSources) batchers?.file(b.filename, b.content);
 
   zip.file(
     "README.txt",

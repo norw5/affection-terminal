@@ -1,9 +1,15 @@
-// Module B — Tier 1: Auto-Router. Read-only profitability analysis of every clean mint
-// route at a chosen target Ⓐ amount. The input is a single "Ⓐ to mint" number — loops are
-// auto-derived (loops = amount / 3, since Generate() mints exactly 3 Ⓐ per call). Each
-// route's transaction count is shown (different routes need different tx counts due to
-// contract mechanics + per-tx gas limits). Any route can be selected and sent to Tier 2.
-import { Button } from "@/components/ui/Button";
+// Module B — route+size selector (the upper half of the /mint "mint" tab). Read-only
+// profitability analysis of every clean mint route. Receives the loop count from the parent
+// (derived from the user's ␀ / pStable input + the mode toggle). The best route is
+// auto-selected; clicking a row's radio button selects it. The selection is reported live via
+// `onSelect` so the execute panel below can drive the user's own batcher for the same route +
+// size — no tab switching.
+//
+// Per-route granularity: each route's loops are clamped to the route's whole-token
+// granularity (MATH=1, G5=5, PI=100) before profitability is computed. Routes whose clamped
+// loops would be 0 (amount below the route's minimum) are shown as "min not met" and are not
+// selectable. This prevents the subtle bug where the table showed profitability at an
+// unclamped loop count that execution would later floor to 0.
 import { Panel } from "@/components/ui/Panel";
 import { MINT_ROUTES, STABLES } from "@/config/mint";
 import { AFFECTION_ADDR } from "@/config/registry";
@@ -12,17 +18,25 @@ import { useMintData } from "@/hooks/useMintData";
 import { useWallet } from "@/hooks/useWallet";
 import { formatUnits } from "@/lib/format/units";
 import {
+  type MintRoute,
   computeMaxSafeLoops,
   computeRouteProfitability,
   recommendBest,
 } from "@/lib/mint/profitability";
+import { clampLoopsToGranularity } from "@/lib/mint/profitability";
 import { planRoute } from "@/lib/mint/routePlan";
-import type { MintPreset } from "@/routes/Mint";
-import { Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RouteFlow } from "./RouteFlow";
 
 const E18 = 10n ** 18n;
+
+export type ExecMode = "full" | "inter";
+
+export type MintSelection = {
+  intermediate: "G5" | "PI" | "MATH";
+  stable: "pDAI" | "pUSDC";
+  loops: bigint;
+};
 
 function bpsToPct(bps: bigint): string {
   const neg = bps < 0n;
@@ -30,70 +44,108 @@ function bpsToPct(bps: bigint): string {
   return `${neg ? "-" : ""}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")}`;
 }
 
-export function AutoRouter({ onMint }: { onMint: (preset: MintPreset) => void }) {
+/** Per-route profitability, with loops clamped to the route's granularity. */
+type RouteResult = {
+  route: MintRoute;
+  profit: ReturnType<typeof computeRouteProfitability>;
+  plan: ReturnType<typeof planRoute>;
+  /** true when the clamped loops = 0 (amount below the route's minimum) */
+  belowMinimum: boolean;
+  /** the loops actually used (after granularity clamping) */
+  effectiveLoops: bigint;
+};
+
+export function AutoRouter({
+  loops,
+  execMode,
+  onSelect,
+}: {
+  loops: bigint;
+  execMode: ExecMode;
+  onSelect: (selection: MintSelection) => void;
+}) {
   const { data, isLoading, isError, refetch } = useMintData();
   const wallet = useWallet();
   const balancesQ = useMintBalances(wallet.address);
-  const [affAmount, setAffAmount] = useState(300);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const affBase = BigInt(Math.round(affAmount * 1e18));
-  const loops = affBase / (3n * E18);
-  const actualAff = loops * 3n * E18;
+  const maxSafe = data ? computeMaxSafeLoops(data.affectionSupply, data.affectionCap) : 0n;
+  const overCap = loops > maxSafe;
+  const effectiveCapLoops = loops > maxSafe ? maxSafe : loops;
 
-  const profits = useMemo(() => {
+  // Compute per-route profitability with granularity clamping.
+  const results: RouteResult[] = useMemo(() => {
     if (!data) return [];
     return MINT_ROUTES.map((route) => {
-      const st = STABLES[route.stable];
-      return computeRouteProfitability(
+      const clampedLoops = clampLoopsToGranularity(effectiveCapLoops, route.loopGranularity);
+      const belowMinimum = clampedLoops <= 0n;
+      const profit = computeRouteProfitability(
         route,
-        loops,
+        clampedLoops,
         data.affectionSupply,
         data.affectionCap,
         data.graph,
         AFFECTION_ADDR,
-        st.address,
-        st.decimals,
+        STABLES[route.stable].address,
+        STABLES[route.stable].decimals,
       );
+      const plan = planRoute(
+        route.intermediate as "MATH" | "G5" | "PI",
+        route.stable,
+        clampedLoops * 3n * E18,
+        execMode,
+      );
+      return {
+        route,
+        profit,
+        plan,
+        belowMinimum,
+        effectiveLoops: clampedLoops,
+      };
     });
-  }, [data, loops]);
+  }, [data, effectiveCapLoops, execMode]);
 
-  const best = useMemo(() => recommendBest(profits), [profits]);
-  const maxSafe = data ? computeMaxSafeLoops(data.affectionSupply, data.affectionCap) : 0n;
-  const overCap = loops > maxSafe;
-
-  const plans = useMemo(
-    () =>
-      MINT_ROUTES.map((route) =>
-        planRoute(route.intermediate as "MATH" | "G5" | "PI", route.stable, actualAff),
-      ),
-    [actualAff],
-  );
+  // Auto-select the best route; allow manual override via radio.
+  const best = useMemo(() => {
+    const profitable = results.filter((r) => !r.belowMinimum && r.profit.exit !== null);
+    if (profitable.length === 0) return null;
+    return recommendBest(profitable.map((r) => r.profit)) ?? null;
+  }, [results]);
 
   const focused = useMemo(() => {
-    if (selectedId) return profits.find((p) => p.route.id === selectedId) ?? best ?? null;
-    return best ?? null;
-  }, [profits, selectedId, best]);
+    if (selectedId) return results.find((r) => r.route.id === selectedId) ?? null;
+    if (best) return results.find((r) => r.route.id === best.route.id) ?? null;
+    return null;
+  }, [results, selectedId, best]);
 
-  const focusedPlan = useMemo(
-    () => (focused ? (plans.find((p) => p.routeId === focused.route.id) ?? null) : null),
-    [plans, focused],
-  );
+  // Lift the current selection to the parent so the execute panel stays in sync.
+  useEffect(() => {
+    if (!focused || focused.belowMinimum) return;
+    onSelect({
+      intermediate: focused.route.intermediate as "G5" | "PI" | "MATH",
+      stable: focused.route.stable,
+      loops: focused.effectiveLoops,
+    });
+  }, [focused, onSelect]);
 
   if (isLoading || !data) {
     return (
-      <Panel title="auto-router">
+      <Panel title="route + size">
         <p className="text-xs text-text-faint">reading supply + PulseX reserves…</p>
       </Panel>
     );
   }
   if (isError) {
     return (
-      <Panel title="auto-router">
+      <Panel title="route + size">
         <p className="text-xs text-err">RPC read failed — retry.</p>
-        <Button variant="ghost" size="sm" onClick={() => refetch()}>
+        <button
+          type="button"
+          className="text-xs text-info hover:underline"
+          onClick={() => refetch()}
+        >
           retry
-        </Button>
+        </button>
       </Panel>
     );
   }
@@ -102,79 +154,42 @@ export function AutoRouter({ onMint }: { onMint: (preset: MintPreset) => void })
 
   return (
     <div className="flex flex-col gap-4">
-      <Panel
-        title="auto-router — live routes"
-        actions={
-          <div className="flex items-center gap-2 text-xs">
-            <label className="flex items-center gap-1 text-text-faint" htmlFor="aff-amount">
-              Ⓐ to mint
-              <input
-                id="aff-amount"
-                type="number"
-                min={3}
-                step={3}
-                value={affAmount}
-                onChange={(e) => setAffAmount(Math.max(0, Number(e.target.value || "0")))}
-                className="w-28 border border-border bg-panel-2 px-2 py-1 text-text focus-ring"
-              />
-            </label>
-            <span className="text-text-faint">
-              = {Number(loops).toLocaleString()} loops · {formatUnits(actualAff, 18, 0)} Ⓐ · cost{" "}
-              {formatUnits(actualAff, 18, 0)} pStable
-            </span>
-          </div>
-        }
-      >
-        {overCap && (
-          <p className="mb-2 text-xs text-warn">
+      {overCap && (
+        <Panel title="route + size">
+          <p className="text-xs text-warn">
             ⚠ size &gt; cap headroom ({maxSafe.toString()} safe loops ={" "}
             {Number(maxSafe * 3n).toLocaleString()} Ⓐ). The engine clamps — near the cap Generate()
             no-ops and BuyWith* would revert.
           </p>
-        )}
-        {focused ? (
-          <RouteFlow profit={focused} />
-        ) : (
-          <p className="text-xs text-err">
-            no DEX exit path found for any route — Ⓐ may have no PulseX liquidity right now.
-          </p>
-        )}
-        {focused && focusedPlan && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button
-              variant="accent"
-              size="sm"
-              onClick={() =>
-                onMint({
-                  intermediate: focused.route.intermediate as "G5" | "PI" | "MATH",
-                  stable: focused.route.stable,
-                  loops,
-                })
-              }
-            >
-              mint this route ▸
-            </Button>
-            <span className="text-xs text-text-faint">
+        </Panel>
+      )}
+
+      {focused && !focused.belowMinimum ? (
+        <Panel title="selected route — flow & profitability">
+          <RouteFlow profit={focused.profit} />
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-text-faint">
               {focused.route.intermediate} · {focused.route.stable} ·{" "}
-              {focused.exit
-                ? `${focused.profit >= 0n ? "profitable" : "unprofitable"} (${bpsToPct(focused.profitBps)}%)`
+              {focused.profit.exit
+                ? `${focused.profit.profit >= 0n ? "profitable" : "unprofitable"} (${bpsToPct(focused.profit.profitBps)}%)`
                 : "no DEX exit"}{" "}
-              · {focusedPlan.totalTxs.toString()} tx + {focusedPlan.approvals.toString()} approvals
+              · {focused.plan.totalTxs.toString()} mint tx + {focused.plan.approvals.toString()}{" "}
+              approval{focused.plan.approvals === 1n ? "" : "s"}
+              {focused.plan.cappedByGas && " · ⚡ gas-capped (split loops)"}
             </span>
           </div>
-        )}
-        <p className="mt-3 text-xs leading-relaxed text-text-faint">
-          <span className="text-text-dim">Loops</span> = Generate() calls (each mints exactly 3 Ⓐ).
-          Cost = Ⓐ amount (the 1 pStable/Ⓐ floor). Different routes need different tx counts due to
-          contract mechanics + per-tx gas limits (measured ~40k gas per Generate(), so ~1000 calls
-          max per tx). The PI route has a contract bug (only 1 PI per call = 300 Ⓐ per tx), so it
-          needs many txs for larger amounts. Approvals are one-time max per route. Use{" "}
-          <Link to="/batcher" className="text-info hover:underline">
-            /batcher
-          </Link>{" "}
-          for a single-tx atomic mint (no multi-tx, no sandwich window).
-        </p>
-      </Panel>
+        </Panel>
+      ) : (
+        <Panel title="selected route">
+          {!focused || focused.belowMinimum ? (
+            <p className="text-xs text-err">
+              {results.every((r) => r.belowMinimum)
+                ? "amount too small — the minimum mint is 3 Ⓐ (1 MATH loop). Larger routes need more: G5 = 15 Ⓐ, PI = 300 Ⓐ."
+                : "no DEX exit path found for any route — Ⓐ may have no PulseX liquidity right now."}
+            </p>
+          ) : null}
+        </Panel>
+      )}
 
       {wallet.isConnected && bal && (
         <Panel title="your wallet · mint-relevant balances">
@@ -195,9 +210,12 @@ export function AutoRouter({ onMint }: { onMint: (preset: MintPreset) => void })
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-text-faint">
-            Holding MATH / G5 / PI? Tier 2 can start from the intermediate and skip the pStable leg.
-          </p>
+          {execMode === "inter" && (
+            <p className="mt-2 text-xs text-text-faint">
+              In “from intermediate” mode you spend MATH / G5 / PI you already hold. Check your
+              balance above — the execute panel will pull the intermediate from your wallet.
+            </p>
+          )}
         </Panel>
       )}
 
@@ -206,70 +224,107 @@ export function AutoRouter({ onMint }: { onMint: (preset: MintPreset) => void })
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="text-text-faint">
+                <th className="w-8 border border-border px-1 py-1" />
                 <th className="border border-border px-2 py-1 text-left">route</th>
                 <th className="border border-border px-2 py-1 text-left">Ⓐ minted</th>
                 <th className="border border-border px-2 py-1 text-left">cost</th>
                 <th className="border border-border px-2 py-1 text-left">profit</th>
                 <th className="border border-border px-2 py-1 text-left">%</th>
                 <th className="border border-border px-2 py-1 text-left">txs</th>
-                <th className="border border-border px-2 py-1 text-left">signs</th>
+                <th className="border border-border px-2 py-1 text-left">gas</th>
                 <th className="border border-border px-2 py-1 text-left">impact</th>
               </tr>
             </thead>
             <tbody>
-              {profits.map((p) => {
-                const isBest = best && p.route.id === best.route.id;
-                const isFocused = focused && p.route.id === focused.route.id;
-                const dec = STABLES[p.route.stable].decimals;
-                const sym = p.route.stable;
-                const plan = plans.find((pl) => pl.routeId === p.route.id);
+              {results.map((r) => {
+                const isBest = best && r.route.id === best.route.id;
+                const isFocused = focused && r.route.id === focused.route.id;
+                const dec = STABLES[r.route.stable].decimals;
+                const sym = r.route.stable;
                 const profitColor =
-                  p.profit > 0n ? "var(--c-ok)" : p.exit ? "var(--c-err)" : "var(--c-text-faint)";
+                  r.profit.profit > 0n
+                    ? "var(--c-ok)"
+                    : r.profit.exit
+                      ? "var(--c-err)"
+                      : "var(--c-text-faint)";
+                const estGas = r.effectiveLoops * r.plan.gasPerLoop;
                 return (
                   <tr
-                    key={p.route.id}
-                    tabIndex={0}
-                    className={`cursor-pointer ${isFocused ? "bg-accent/10" : "hover:bg-panel-2"} focus-ring`}
-                    onClick={() => setSelectedId(isFocused ? null : p.route.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSelectedId(isFocused ? null : p.route.id);
-                      }
+                    key={r.route.id}
+                    onClick={() => {
+                      if (!r.belowMinimum) setSelectedId(r.route.id);
                     }}
+                    onKeyDown={
+                      r.belowMinimum
+                        ? undefined
+                        : (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedId(r.route.id);
+                            }
+                          }
+                    }
+                    tabIndex={r.belowMinimum ? -1 : 0}
+                    className={`border border-border ${
+                      r.belowMinimum
+                        ? "opacity-40"
+                        : `cursor-pointer ${isFocused ? "bg-accent/10" : "hover:bg-panel-2"}`
+                    }`}
                   >
+                    <td className="border border-border px-1 py-1 text-center">
+                      <input
+                        type="radio"
+                        name="route"
+                        checked={isFocused ?? false}
+                        disabled={r.belowMinimum}
+                        onChange={() => setSelectedId(r.route.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="cursor-pointer accent-[var(--c-accent)]"
+                        aria-label={`select ${r.route.id} route`}
+                      />
+                    </td>
                     <td className="border border-border px-2 py-1 text-text">
-                      {isBest && <span className="text-accent">▸ </span>}
-                      {p.route.id}
-                      {isFocused && <span className="text-text-faint"> · focus</span>}
+                      <span className="flex items-center gap-1.5">
+                        {r.route.id}
+                        {isBest && (
+                          <span className="border border-accent-dim bg-accent/10 px-1 py-0.5 text-[0.625rem] font-medium uppercase tracking-wider text-accent">
+                            best
+                          </span>
+                        )}
+                        {r.belowMinimum && (
+                          <span className="text-text-faint">
+                            (min {Number(r.route.loopGranularity * 3n).toLocaleString()} Ⓐ)
+                          </span>
+                        )}
+                      </span>
                     </td>
                     <td className="border border-border px-2 py-1 text-text-dim">
-                      {formatUnits(p.affMinted, 18, 2)}
+                      {r.belowMinimum ? "—" : formatUnits(r.profit.affMinted, 18, 2)}
                     </td>
                     <td className="border border-border px-2 py-1 text-text-dim">
-                      {formatUnits(p.stableCost, dec, 2)} {sym}
+                      {r.belowMinimum ? "—" : `${formatUnits(r.profit.stableCost, dec, 2)} ${sym}`}
                     </td>
                     <td className="border border-border px-2 py-1" style={{ color: profitColor }}>
-                      {p.exit
-                        ? `${p.profit >= 0n ? "+" : ""}${formatUnits(
-                            p.profit < 0n ? -p.profit : p.profit,
+                      {r.belowMinimum || !r.profit.exit
+                        ? "—"
+                        : `${r.profit.profit >= 0n ? "+" : ""}${formatUnits(
+                            r.profit.profit < 0n ? -r.profit.profit : r.profit.profit,
                             dec,
                             2,
-                          )}`
-                        : "—"}
+                          )}`}
                     </td>
                     <td className="border border-border px-2 py-1" style={{ color: profitColor }}>
-                      {p.exit ? bpsToPct(p.profitBps) : "—"}
+                      {r.belowMinimum || !r.profit.exit ? "—" : bpsToPct(r.profit.profitBps)}
                     </td>
                     <td className="border border-border px-2 py-1 text-text-dim">
-                      {plan ? plan.totalTxs.toString() : "—"}
-                      {plan?.cappedByGas && <span className="text-warn"> ⚡</span>}
+                      {r.belowMinimum ? "—" : r.plan.totalTxs.toString()}
+                      {r.plan.cappedByGas && <span className="text-warn"> ⚡</span>}
                     </td>
                     <td className="border border-border px-2 py-1 text-text-faint">
-                      {plan ? plan.totalSigns.toString() : "—"}
+                      {r.belowMinimum ? "—" : formatGasShort(estGas)}
                     </td>
                     <td className="border border-border px-2 py-1 text-text-faint">
-                      {p.exit ? bpsToPct(p.exit.slippageBps) : "—"}
+                      {r.belowMinimum || !r.profit.exit ? "—" : bpsToPct(r.profit.exit.slippageBps)}
                     </td>
                   </tr>
                 );
@@ -278,13 +333,21 @@ export function AutoRouter({ onMint }: { onMint: (preset: MintPreset) => void })
           </table>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-text-faint">
-          Click a row to focus its route flow above. <span className="text-text-dim">txs</span> =
-          mint transactions needed (intermediate + AFFECTION), capped at ~1000 Generate() calls per
-          tx (measured gas). <span className="text-text-dim">signs</span> = total wallet signatures
-          (txs + 2 one-time approvals). ⚡ = gas-capped (needs multiple Generate() batches). Profit
-          excludes gas. Loops cap-clamped to {maxSafe.toString()} safe.
+          Select a route with the radio button (the best route is auto-selected).{" "}
+          <span className="text-text-dim">txs</span> = atomic mint transactions via your batcher in{" "}
+          {execMode === "inter" ? "intermediate" : "full"} mode (1 tx per batch, gas-capped routes
+          split). <span className="text-text-dim">gas</span> = estimated total gas for the mint. ⚡
+          = gas-capped. Routes greyed out when the amount is below their minimum. Profit excludes
+          gas. Loops cap-clamped to {maxSafe.toString()} safe.
         </p>
       </Panel>
     </div>
   );
+}
+
+function formatGasShort(gas: bigint): string {
+  const n = Number(gas);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return n.toString();
 }

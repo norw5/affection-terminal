@@ -109,7 +109,8 @@ export function RawConsole() {
   }, [abi, item, funcName, args]);
 
   const isView = item?.stateMutability === "view" || item?.stateMutability === "pure";
-  const isWrite = item?.stateMutability === "nonpayable" || item?.stateMutability === "payable";
+  const isNonpayableWrite = item?.stateMutability === "nonpayable";
+  const isPayable = item?.stateMutability === "payable";
 
   async function simulate() {
     if (!abi || !item || !calldata) return;
@@ -252,7 +253,7 @@ export function RawConsole() {
               <Button variant="ghost" size="sm" disabled={!calldata || simBusy} onClick={simulate}>
                 {simBusy ? "simulating…" : isView ? "read (eth_call)" : "simulate (eth_call)"}
               </Button>
-              {isWrite && (
+              {isNonpayableWrite && (
                 <Button
                   variant="accent"
                   size="sm"
@@ -263,10 +264,16 @@ export function RawConsole() {
                   {writePending ? "signing…" : "send tx"}
                 </Button>
               )}
-              {isWrite && !wallet.isConnected && (
+              {isPayable && (
+                <span className="text-warn">
+                  payable function — sending native value (PLS) is not supported in this console;
+                  use simulate to test
+                </span>
+              )}
+              {isNonpayableWrite && !wallet.isConnected && (
                 <span className="text-text-faint">connect a wallet to send write txs</span>
               )}
-              {isWrite && wallet.isWrongChain && (
+              {isNonpayableWrite && wallet.isWrongChain && (
                 <span className="text-warn">switch to PulseChain</span>
               )}
               {txHash && (

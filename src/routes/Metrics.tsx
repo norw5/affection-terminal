@@ -1,5 +1,3 @@
-import { BurnerBalancesPanel } from "@/components/metrics/BurnerBalancesPanel";
-import { BurnsPanel } from "@/components/metrics/BurnsPanel";
 import { RouteMap } from "@/components/metrics/RouteMap";
 import { SupplyGauges } from "@/components/metrics/SupplyGauges";
 import { Panel } from "@/components/ui/Panel";
@@ -19,10 +17,6 @@ export function Metrics() {
 
       <SupplyGauges />
 
-      <BurnsPanel />
-
-      <BurnerBalancesPanel />
-
       <RouteMap />
 
       <Panel title="how these are computed">
@@ -34,24 +28,12 @@ export function Metrics() {
             <code>src/config/chain.ts</code>). Polled every ~20s.
           </p>
           <p>
-            <span className="text-text">Burns</span> — real Ⓐ burned = sum of{" "}
-            <code>Transfer(…, 0x0)</code> + <code>Transfer(…, 0xdEaD)</code>{" "}
-            <code>Transfer(…, 0x369)</code> log events on the Ⓐ contract, scanned in parallel chunks
-            (4 concurrent <code>getLogs</code>) with a cancel button. Time windows (24h / 7d / 30d)
-            estimate block counts from the live block time. Never trusts the unverified community
-            burn list.
-          </p>
-          <p>
-            <span className="text-text">Ⓐ held/locked by ecosystem contracts</span> — a live{" "}
-            <code>balanceOf</code> read of Ⓐ on each known burner/locker contract (community list,
-            unverified). Cheap and scan-free; complements the log-event burn scan.
-          </p>
-          <p>
             <span className="text-text">Live route map</span> — PulseX V2
-            <code> factory.getPair(token, quote)</code> for each ecosystem token × WPLS/pDAI/pUSDC,
-            then <code>pair.getReserves()</code> for liquidity + spot price. The factory (
-            <code>0x1715…a10d</code>) was discovered on-chain by calling <code>factory()</code> on a
-            live pair; 65k+ pairs verified.
+            <code> factory.getPair(token, quote)</code> for each ecosystem token × WPLS/pDAI/pUSDC
+            (plus the WPLS/pDAI, WPLS/pUSDC, pDAI/pUSDC cross-quote pairs — the on-ramp from native
+            to the pStables minting needs), then <code>pair.getReserves()</code> for liquidity +
+            spot price. The factory (<code>0x1715…a10d</code>) was discovered on-chain by calling{" "}
+            <code>factory()</code> on a live pair; 65k+ pairs verified.
           </p>
           <p>
             The auto-router + profitability engine (with slippage + the 0.3% fee) lands in{" "}

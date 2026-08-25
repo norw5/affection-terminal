@@ -1,32 +1,29 @@
-// Pure helpers for calculating the transaction count + loop packing for each mint route.
-// Verified against the DEPLOYED multi-mint contracts (bytecode dispatch + historical tx
-// replays — the recovered sources/multi-*.sol describe an older, undeployed ABI):
+// Pure helpers for calculating the transaction count + loop packing for each mint route,
+// framed around the portal's OWN batcher contracts (UnifiedAffectionBatcher /
+// AtomicArbBatcher). The batcher does the full route — pStable → intermediate → Generate×N →
+// BuyWith* → Ⓐ to caller — in ONE atomic transaction. The recovered community multi-mint
+// contracts are no longer involved (see the P12 entry in AGENTS.md).
 //
-// Mechanics:
+// Mechanics (verified on-chain + against affection_docs/sources/affection.sol):
 //   - Generate() mints exactly 3 Ⓐ per call (conjecture.sol: _mintToCap × 3)
-//   - MultiAffection.multiBuyWithMATH/G5/PI(loops):
-//       • loops = number of Generate() calls → mints loops * 3 Ⓐ
-//       • takes loops * perLoop[intermediate] intermediate tokens from caller
-//       • perLoop: MATH=3e18 (3 per loop), G5=6e17 (0.6 per loop), PI=1e16 (0.01 per loop)
-//   - MultiMath.multiBuyWithDAI/USDC(N): N = MATH tokens to mint (1 Random() call each)
-//       • costs N pStable, produces N MATH
-//   - MultiG5.multiBuyWithDAI(N): N = G5 tokens to mint (loops the G5 mint N times)
-//       • costs N * 5 pDAI, produces N G5
-//   - MultiPI.multiBuyWithDAI(N): N = PI tokens to mint
-//       • costs N * 300 pDAI, produces N PI (only small N observed on-chain — simulate first)
-//   - All deployed multi-mints carry an owner-settable tax (0 live; taxMax 15) + admin
-//     withdrawal functions — the live tax is surfaced in the mint terminal.
+//   - batcher.mintFromStable(stable, intermediate, loops, minOut):
+//       • pulls loops * 3 pStable (18-dec) or 3 * 1e6 pUSDC-equivalent from the caller
+//       • mints the intermediate (Random/BuyWithDAI/USDC looped internally)
+//       • loops Generate() inside the batcher → mints loops * 3 Ⓐ
+//       • sends the ␀ straight back to the caller
+//   - batcher.multiBuyWith(intermediate, loops): same Generate loop + BuyWith*, but the
+//     caller supplies the intermediate (skips the pStable leg).
 //
 // Gas limits: each Generate() call uses bigModExp several times (~expensive). The practical
-// per-tx ceiling is ~2000 Generate() calls. MultiG5's BuyWithDAI loop is cheaper per call.
+// per-tx ceiling is the block gas limit (~45M) minus ~10% headroom. Measured per-loop:
+//   MATH route ≈ 148.5k (3× Random + Generate), G5 ≈ 46.4k, PI ≈ 40.2k.
+// A mint larger than maxLoopsPerTx() must split across multiple mintFromStable calls.
 //
 // For a target of `affToMint` Ⓐ:
 //   - generateLoops = affToMint / 3 (must be integer)
-//   - intermediate tokens needed = generateLoops * perLoop[intermediate] / 1e18
-//   - intermediate mint calls = ceil(intermediateTokens / maxIntermediatePerTx)
-//   - affection mint calls = ceil(generateLoops / maxGeneratePerTx)
-//   - total txs = intermediateMintCalls + affectionMintCalls
-//   - total approvals = 2 (one-time, per route)
+//   - mintTxs = ceil(generateLoops / maxLoopsPerTx(intermediate))   (1 if it fits)
+//   - approvals = 1 (one-time, per stable or intermediate — re-used across mintTxs)
+//   - totalSigns = mintTxs + approvals
 
 const E18 = 10n ** 18n;
 
@@ -38,89 +35,50 @@ export type RoutePlan = {
   stable: "pDAI" | "pUSDC";
   affToMint: bigint;
   generateLoops: bigint;
-  intermediateTokensNeeded: bigint;
-  intermediateMintCalls: bigint;
-  affectionMintCalls: bigint;
+  /** atomic mint transactions needed (1 if it fits in one tx, N if gas-capped) */
   totalTxs: bigint;
+  /** one-time approval transactions (1 per mint session — re-used across mintTxs) */
   approvals: bigint;
   totalSigns: bigint;
   perTxBreakdown: Array<{ label: string; loops: bigint }>;
+  /** true when generateLoops exceeds the per-tx gas ceiling (needs multiple batches) */
   cappedByGas: boolean;
-  piBugWarning: boolean;
+  /** gas per loop used for the plan (mode-dependent: full vs inter) */
+  gasPerLoop: bigint;
 };
 
-// Per-tx ceilings from MEASURED on-chain gas (receipts, 2026-08): Random() ≈ 36.2k,
-// Generate() ≈ 39.8k, G5 mint ≈ 11.5k marginal. With a ~45M block gas limit and ~10%
-// headroom (~40.5M usable): MultiAffection Generate leg ≤ ~1000 loops; MultiMath Random
-// leg ≤ ~1100 MATH; MultiG5 mint leg is far cheaper (not binding).
-const MAX_GENERATE_PER_TX = 1000n;
-const MAX_MATH_PER_TX = 1100n;
-const MAX_G5_PER_TX = 2000n;
-
-const PER_LOOP: Record<"MATH" | "G5" | "PI", bigint> = {
-  MATH: 3n * E18,
-  G5: 6n * 10n ** 17n,
-  PI: 1n * 10n ** 16n,
-};
+import { GAS_CEILING_PER_TX, GAS_PER_LOOP, GAS_PER_LOOP_INTER, maxLoopsPerTx } from "@/config/mint";
 
 function ceilDiv(a: bigint, b: bigint): bigint {
   if (b === 0n) return 0n;
   return (a + b - 1n) / b;
 }
 
-/** Compute the execution plan for a route given the target Ⓐ amount (in base units, 18 dec). */
+/** Compute the execution plan for a route given the target Ⓐ amount (in base units, 18 dec).
+ *  `mode` = "full" (pStable → intermediate → Ⓐ via mintFromStable) or "inter" (intermediate →
+ *  Ⓐ via multiBuyWith — skips the pStable leg, ~39.8k gas/loop for all routes). */
 export function planRoute(
   intermediate: "MATH" | "G5" | "PI",
   stable: "pDAI" | "pUSDC",
   affToMint: bigint,
+  mode: "full" | "inter" = "full",
 ): RoutePlan {
   const routeId = `${intermediate}·${stable}` as RouteId;
   const generateLoops = affToMint / (3n * E18);
-  const perLoop = PER_LOOP[intermediate];
-  const intermediateTokensNeeded = (perLoop * generateLoops) / E18;
-
-  let intermediateMintCalls: bigint;
-  let piBugWarning = false;
-
-  if (intermediate === "PI") {
-    // MultiPI bug: only 1 PI per call. Need ceil(PI tokens) calls.
-    intermediateMintCalls = intermediateTokensNeeded > 0n ? intermediateTokensNeeded : 1n;
-    if (intermediateTokensNeeded > 1n) piBugWarning = true;
-  } else if (intermediate === "MATH") {
-    intermediateMintCalls = ceilDiv(intermediateTokensNeeded, MAX_MATH_PER_TX);
-  } else {
-    // G5: MultiG5 loops BuyWithDAI() N times — gas per call is cheaper than Generate()
-    intermediateMintCalls = ceilDiv(intermediateTokensNeeded, MAX_G5_PER_TX);
-  }
-
-  const affectionMintCalls = ceilDiv(generateLoops, MAX_GENERATE_PER_TX);
-  const totalTxs = intermediateMintCalls + affectionMintCalls;
-  const approvals = 2n;
+  const maxPerTx = maxLoopsPerTx(intermediate, mode);
+  const totalTxs = ceilDiv(generateLoops, maxPerTx);
+  const approvals = 1n;
   const totalSigns = totalTxs + approvals;
-  const cappedByGas = generateLoops > MAX_GENERATE_PER_TX;
+  const cappedByGas = generateLoops > maxPerTx;
 
+  const entryFn = mode === "inter" ? "multiBuyWith" : "mintFromStable";
+  const gasPerLoop = mode === "inter" ? GAS_PER_LOOP_INTER : GAS_PER_LOOP[intermediate];
   const perTxBreakdown: Array<{ label: string; loops: bigint }> = [];
-  if (intermediate === "PI") {
-    for (let i = 0n; i < intermediateMintCalls; i++) {
-      perTxBreakdown.push({ label: `MultiPI call ${i + 1n}/${intermediateMintCalls}`, loops: 1n });
-    }
-  } else {
-    const imSymbol = intermediate === "MATH" ? "MultiMath" : "MultiG5";
-    const maxPerTx = intermediate === "MATH" ? MAX_MATH_PER_TX : MAX_G5_PER_TX;
-    for (let i = 0n; i < intermediateMintCalls; i++) {
-      const remaining = intermediateTokensNeeded - i * maxPerTx;
-      const batch = remaining > maxPerTx ? maxPerTx : remaining;
-      perTxBreakdown.push({
-        label: `${imSymbol} call ${i + 1n}/${intermediateMintCalls}`,
-        loops: batch,
-      });
-    }
-  }
-  for (let i = 0n; i < affectionMintCalls; i++) {
-    const remaining = generateLoops - i * MAX_GENERATE_PER_TX;
-    const batch = remaining > MAX_GENERATE_PER_TX ? MAX_GENERATE_PER_TX : remaining;
+  for (let i = 0n; i < totalTxs; i++) {
+    const remaining = generateLoops - i * maxPerTx;
+    const batch = remaining > maxPerTx ? maxPerTx : remaining;
     perTxBreakdown.push({
-      label: `MultiAffection call ${i + 1n}/${affectionMintCalls}`,
+      label: `${entryFn} call ${i + 1n}/${totalTxs}`,
       loops: batch,
     });
   }
@@ -131,15 +89,12 @@ export function planRoute(
     stable,
     affToMint: generateLoops * 3n * E18,
     generateLoops,
-    intermediateTokensNeeded,
-    intermediateMintCalls,
-    affectionMintCalls,
     totalTxs,
     approvals,
     totalSigns,
     perTxBreakdown,
     cappedByGas,
-    piBugWarning,
+    gasPerLoop,
   };
 }
 
@@ -150,3 +105,6 @@ export function routeGranularity(intermediate: "MATH" | "G5" | "PI"): bigint {
   if (intermediate === "G5") return 15n * E18;
   return 300n * E18;
 }
+
+// Re-export the gas model so callers can resolve the per-route ceiling in one place.
+export { GAS_PER_LOOP, GAS_PER_LOOP_INTER, GAS_CEILING_PER_TX };

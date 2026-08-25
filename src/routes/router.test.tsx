@@ -46,7 +46,9 @@ describe("KB routing (layout + index + $doc)", () => {
   it("renders the batcher doc with its design guarantees section", async () => {
     mountApp("/kb/04_multi_mint_contracts");
     expect(await screen.findByText(/Design guarantees/)).toBeTruthy();
-    expect(await screen.findByText(/A note on the older community batchers/)).toBeTruthy();
+    // The legacy "older community batchers" section was removed in P12; verify the
+    // deploy section is present instead.
+    expect(await screen.findByText(/Deploying your own/)).toBeTruthy();
   });
 
   it("shows the 404 branch for an unknown slug", async () => {

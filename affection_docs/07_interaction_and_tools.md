@@ -10,11 +10,13 @@ intermediary.
 
 - **Knowledge base** (`/kb`) — this documentation, plus contract ABIs, addresses, and a
   build-time bundle export.
-- **Minting terminal** (`/mint`) — Tier-1 Auto-Router (profitability), Tier-2 Custom Routing
-  (explicit pre-simulated steps), Tier-3 Raw Console (paste ABI → call any function).
+- **Minting terminal** (`/mint`) — route selector + profitability estimates, then atomic
+  mint execution through your own batcher contract (approve → `mintFromStable` /
+  `multiBuyWith`, both pre-simulated). Plus a Raw Console tab (paste ABI → call any
+  function).
 - **Batcher wizard** (`/batcher`) — deploy your own atomic mint batcher
-  ([`04_multi_mint_contracts.md`](04_multi_mint_contracts.md)).
-- **Metrics** (`/metrics`) — supply headroom, burns, PulseX route map.
+  ([`04_multi_mint_contracts.md`](04_multi_mint_contracts.md)); minting happens at `/mint`.
+- **Metrics** (`/metrics`) — supply headroom, PulseX route map.
 
 ## Block explorer
 
