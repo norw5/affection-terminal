@@ -152,7 +152,7 @@ export function MintExecute({
   // profitability engine. This protects against sandwich attacks — with amountOutMin = 0, a MEV
   // bot could front-run the swap and the user would get very little pDAI. With the guard, the tx
   // reverts if the swap would return less than the tolerated minimum, and the user only loses gas.
-  const slippageBps = BigInt(Math.max(0, Math.min(100, slippagePct)) * 100);
+  const slippageBps = BigInt(Math.round(Math.max(0.01, Math.min(100, slippagePct)) * 100));
   const amountOutMin = useMemo(() => {
     if (!selection.exitAmountOut || selection.exitAmountOut <= 0n) return 0n;
     return (selection.exitAmountOut * (10_000n - slippageBps)) / 10_000n;
@@ -414,12 +414,11 @@ export function MintExecute({
                 slippage
                 <input
                   type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
+                  min={0.01}
+                  step={0.01}
                   value={slippagePct}
                   onChange={(e) =>
-                    setSlippagePct(Math.max(0, Math.min(100, Number(e.target.value || "0"))))
+                    setSlippagePct(Math.max(0.01, Math.min(100, Number(e.target.value || "0.01"))))
                   }
                   className="w-16 border border-border bg-panel px-2 py-0.5 text-text focus-ring"
                 />
