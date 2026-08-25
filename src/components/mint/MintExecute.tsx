@@ -33,7 +33,7 @@ import { formatUnits } from "@/lib/format/units";
 import { publicClient } from "@/lib/rpc/client";
 import { useTxLogStore } from "@/stores/txLog";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Abi, Address } from "viem";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import type { ExecMode, MintSelection } from "./AutoRouter";
@@ -67,6 +67,7 @@ export function MintExecute({
   const canSell =
     isArbBatcher && execMode === "full" && !!selection.exitPath && selection.exitPath.length >= 2;
   const [sellAfterMint, setSellAfterMint] = useState(false);
+  const [slippagePct, setSlippagePct] = useState(2);
 
   // Reset sell-after-mint when the selection changes and the new route has no exit path.
   useEffect(() => {
@@ -133,11 +134,32 @@ export function MintExecute({
     : execMode === "full"
       ? "mintFromStable"
       : "multiBuyWith";
-  // mintAndSwap args: (stable, intermediate, loops, minAffOut, path[], amountOutMin, deadline)
-  const swapDeadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 min
-  const swapPath = (selection.exitPath ?? [AFFECTION_ADDR, st.address]) as Address[];
+
+  // Memoize the swap deadline + path + slippage guard so the sim query key is stable across
+  // re-renders. Without this, Date.now() changes every second → new query key → fresh sim →
+  // button flashes between enabled/disabled. The deadline only needs to be recomputed when the
+  // route/size/sell-mode changes (the user will re-simulate then anyway).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally re-computes on route/size/sell-mode/slippage change so the deadline is fresh for a new mint
+  const swapDeadline = useMemo(
+    () => BigInt(Math.floor(Date.now() / 1000) + 1200), // 20 min from now
+    [selection.intermediate, selection.stable, loops, sellAfterMint, slippagePct],
+  );
+  const swapPath = useMemo(
+    () => (selection.exitPath ?? [AFFECTION_ADDR, st.address]) as Address[],
+    [selection.exitPath, st.address],
+  );
+  // Slippage guard: amountOutMin = (100 - slippagePct)% of the expected swap output from the
+  // profitability engine. This protects against sandwich attacks — with amountOutMin = 0, a MEV
+  // bot could front-run the swap and the user would get very little pDAI. With the guard, the tx
+  // reverts if the swap would return less than the tolerated minimum, and the user only loses gas.
+  const slippageBps = BigInt(Math.max(0, Math.min(100, slippagePct)) * 100);
+  const amountOutMin = useMemo(() => {
+    if (!selection.exitAmountOut || selection.exitAmountOut <= 0n) return 0n;
+    return (selection.exitAmountOut * (10_000n - slippageBps)) / 10_000n;
+  }, [selection.exitAmountOut, slippageBps]);
+
   const mintArgs = useMintAndSwap
-    ? [st.address, im.address, loops, expectedAff, swapPath, 0n, swapDeadline]
+    ? [st.address, im.address, loops, expectedAff, swapPath, amountOutMin, swapDeadline]
     : execMode === "full"
       ? [st.address, im.address, loops, expectedAff]
       : [im.address, loops];
@@ -231,7 +253,15 @@ export function MintExecute({
                   address: batcher.address,
                   abi: batcher.abi as Abi,
                   functionName: "mintAndSwap",
-                  args: [st.address, im.address, loops, expectedAff, swapPath, 0n, swapDeadline],
+                  args: [
+                    st.address,
+                    im.address,
+                    loops,
+                    expectedAff,
+                    swapPath,
+                    amountOutMin,
+                    swapDeadline,
+                  ],
                 }
               : execMode === "full"
                 ? {
@@ -364,20 +394,39 @@ export function MintExecute({
 
         {/* sell-after-mint toggle — only for AtomicArbBatcher with an exit path */}
         {canSell && (
-          <label className="flex items-center gap-2 border border-border bg-panel-2 px-3 py-2 text-xs">
-            <input
-              type="checkbox"
-              checked={sellAfterMint}
-              onChange={(e) => setSellAfterMint(e.target.checked)}
-              className="accent-[var(--c-accent)]"
-            />
-            <span className="text-text">
-              sell after mint{" "}
-              <span className="text-text-faint">
-                (mint + swap Ⓐ→{st.symbol} via PulseX in one tx — defeats sell-side sniping)
+          <div className="flex flex-wrap items-center gap-3 border border-border bg-panel-2 px-3 py-2 text-xs">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={sellAfterMint}
+                onChange={(e) => setSellAfterMint(e.target.checked)}
+                className="accent-[var(--c-accent)]"
+              />
+              <span className="text-text">
+                sell after mint{" "}
+                <span className="text-text-faint">
+                  (mint + swap Ⓐ→{st.symbol} via PulseX in one tx — defeats sell-side sniping)
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+            {sellAfterMint && (
+              <label className="flex items-center gap-1 text-text-faint">
+                slippage
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={slippagePct}
+                  onChange={(e) =>
+                    setSlippagePct(Math.max(0, Math.min(100, Number(e.target.value || "0"))))
+                  }
+                  className="w-16 border border-border bg-panel px-2 py-0.5 text-text focus-ring"
+                />
+                %
+              </label>
+            )}
+          </div>
         )}
         {isArbBatcher && !canSell && execMode === "full" && (
           <p className="text-text-faint">
@@ -487,9 +536,10 @@ export function MintExecute({
               One approval (max, one-time per {st.symbol}) + one atomic tx. The full route —{" "}
               {st.symbol} → {im.symbol} → Generate×N → BuyWith* → Ⓐ → PulseX swap → {st.symbol} to
               you — runs inside your AtomicArbBatcher, so there’s no sandwich window on either the
-              mint or the sell. The swap uses the best DEX exit path selected above.{" "}
-              <code>amountOutMin = 0</code> (no slippage guard — the pre-simulation confirms the
-              route is viable, but watch the price impact column).
+              mint or the sell. The swap uses the best DEX exit path selected above, with a{" "}
+              <strong>{slippagePct}% slippage guard</strong> (reverts if the swap returns less than{" "}
+              {100 - slippagePct}% of the expected {st.symbol} amount — protects against sandwich
+              attacks; you'd only lose gas on a revert).
             </>
           ) : execMode === "full" ? (
             <>

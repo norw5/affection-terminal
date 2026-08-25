@@ -38,6 +38,8 @@ export type MintSelection = {
   loops: bigint;
   /** Best DEX exit path (Ⓐ → … → stable) from the profitability engine, for mintAndSwap. */
   exitPath?: `0x${string}`[];
+  /** Expected swap output (in stable base units) from the profitability engine, for slippage guard. */
+  exitAmountOut?: bigint;
 };
 
 function bpsToPct(bps: bigint): string {
@@ -128,6 +130,7 @@ export function AutoRouter({
       stable: focused.route.stable,
       loops: focused.effectiveLoops,
       exitPath: focused.profit.exit?.path,
+      exitAmountOut: focused.profit.exit?.amountOut,
     });
   }, [focused, onSelect]);
 
