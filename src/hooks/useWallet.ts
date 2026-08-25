@@ -35,7 +35,10 @@ export function useWallet(): Wallet {
     connectors,
     chainId,
     isWrongChain,
-    connect: (connector) => connect({ connector }),
+    // Pass chainId so wagmi requests PulseChain as part of the connection flow — without this,
+    // the wallet connects on whatever chain it's currently on (Ethereum by default) and the user
+    // sees "wrong chain" until they manually switch.
+    connect: (connector) => connect({ connector, chainId: pulsechain.id }),
     disconnect,
     switchChain: () => switchChain({ chainId: pulsechain.id }),
   };
