@@ -7,63 +7,6 @@ import { shortenAddress } from "@/lib/format/address";
 import { formatUnits } from "@/lib/format/units";
 import { spotPrice } from "@/lib/pulsex/math";
 
-function LiquidityGraph({
-  pairs,
-}: {
-  pairs: {
-    baseSymbol: string;
-    quoteSymbol: string;
-    baseReserve: bigint;
-    quoteReserve: bigint;
-    quoteDecimals: number;
-    baseDecimals: number;
-  }[];
-}) {
-  if (pairs.length === 0) {
-    return <p className="text-xs text-text-faint">no pairs with liquidity discovered.</p>;
-  }
-
-  const maxLiquidity = pairs.reduce((max, p) => {
-    const val = p.quoteReserve > p.baseReserve ? p.quoteReserve : p.baseReserve;
-    return val > max ? val : max;
-  }, 0n);
-
-  return (
-    <svg
-      viewBox="0 0 600 400"
-      className="w-full border border-border bg-panel-2"
-      role="img"
-      aria-label="PulseX liquidity graph"
-    >
-      <text x="12" y="20" className="fill-text-faint text-[10px]">
-        pair liquidity (relative)
-      </text>
-      {pairs.map((p, i) => {
-        const y = 40 + i * 28;
-        const barWidth = Number((p.quoteReserve * 400n) / (maxLiquidity > 0n ? maxLiquidity : 1n));
-        const price = spotPrice(p.baseReserve, p.quoteReserve);
-        return (
-          <g key={`${p.baseSymbol}-${p.quoteSymbol}-${i}`}>
-            <text x="12" y={y + 10} className="fill-text text-[11px]">
-              {p.baseSymbol}/{p.quoteSymbol}
-            </text>
-            <rect
-              x="120"
-              y={y}
-              width={Math.max(barWidth, 2)}
-              height="18"
-              className="fill-accent opacity-70"
-            />
-            <text x="530" y={y + 10} className="fill-text-dim text-[9px]">
-              {formatUnits(price, 18, 6)}
-            </text>
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
 export function RouteMap() {
   const { data, isLoading, isError, refetch } = usePulseXPairs();
 
@@ -110,16 +53,6 @@ export function RouteMap() {
             it re-discovers automatically.
           </p>
         )}
-        <LiquidityGraph
-          pairs={sortedPairs.map((p) => ({
-            baseSymbol: p.baseSymbol,
-            quoteSymbol: p.quoteSymbol,
-            baseReserve: p.baseReserve,
-            quoteReserve: p.quoteReserve,
-            quoteDecimals: p.quoteDecimals,
-            baseDecimals: p.baseDecimals,
-          }))}
-        />
 
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-xs">
