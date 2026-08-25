@@ -94,7 +94,7 @@ export function RouteFlow({ profit }: { profit: RouteProfit }) {
       <div className="flex items-center gap-3 text-xs">
         <span className="text-text-faint">net</span>
         <span style={{ color: profitColor }}>
-          {profit.profit >= 0n ? "+" : ""}
+          {profit.profit >= 0n ? "+" : "-"}
           {compact(
             profit.profit < 0n ? -profit.profit : profit.profit,
             route.stable === "pDAI" ? 18 : 6,

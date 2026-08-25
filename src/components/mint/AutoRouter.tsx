@@ -36,6 +36,8 @@ export type MintSelection = {
   intermediate: "G5" | "PI" | "MATH";
   stable: "pDAI" | "pUSDC";
   loops: bigint;
+  /** Best DEX exit path (Ⓐ → … → stable) from the profitability engine, for mintAndSwap. */
+  exitPath?: `0x${string}`[];
 };
 
 function bpsToPct(bps: bigint): string {
@@ -125,6 +127,7 @@ export function AutoRouter({
       intermediate: focused.route.intermediate as "G5" | "PI" | "MATH",
       stable: focused.route.stable,
       loops: focused.effectiveLoops,
+      exitPath: focused.profit.exit?.path,
     });
   }, [focused, onSelect]);
 
@@ -307,7 +310,7 @@ export function AutoRouter({
                     <td className="border border-border px-2 py-1" style={{ color: profitColor }}>
                       {r.belowMinimum || !r.profit.exit
                         ? "—"
-                        : `${r.profit.profit >= 0n ? "+" : ""}${formatUnits(
+                        : `${r.profit.profit >= 0n ? "+" : "-"}${formatUnits(
                             r.profit.profit < 0n ? -r.profit.profit : r.profit.profit,
                             dec,
                             2,

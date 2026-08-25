@@ -4,6 +4,9 @@
 //   - "full"          : pStable → intermediate → Ⓐ via batcher.mintFromStable() — one atomic tx
 //   - "inter"         : intermediate → Ⓐ via batcher.multiBuyWith() — for users who already
 //                       hold MATH/G5/PI (one atomic tx, no pStable leg, ~39.8k gas/loop)
+// When the batcher is an AtomicArbBatcher (mint-sell variant) AND a DEX exit path is available
+// from the profitability engine, a "sell after mint" checkbox switches the call to
+// `mintAndSwap` — mint + sell in one atomic tx (defeats sell-side sniping).
 // The approve step is driven by the LIVE on-chain allowance (a restored batcher with an
 // existing max-approval skips straight to the mint). Every step is pre-simulated; nothing
 // auto-signs. "mint again" stays live on the same tab for consecutive mints.
@@ -20,6 +23,7 @@ import {
   erc20Abi,
   maxLoopsPerTx,
 } from "@/config/mint";
+import { AFFECTION_ADDR } from "@/config/registry";
 import { useMintBalances } from "@/hooks/useMintBalances";
 import { formatGas, formatGwei, useNetworkContext } from "@/hooks/useNetworkContext";
 import { useSimulateBatcherStep } from "@/hooks/useSimulateBatcherStep";
@@ -30,7 +34,7 @@ import { publicClient } from "@/lib/rpc/client";
 import { useTxLogStore } from "@/stores/txLog";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import type { Abi } from "viem";
+import type { Abi, Address } from "viem";
 import { useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import type { ExecMode, MintSelection } from "./AutoRouter";
 import type { ActiveBatcher } from "./BatcherBar";
@@ -55,6 +59,19 @@ export function MintExecute({
   const im = INTERMEDIATES[selection.intermediate];
   const st = STABLES[selection.stable];
   const loops = selection.loops;
+
+  // "sell after mint" — only available on the AtomicArbBatcher (mint-sell variant) when we
+  // have a DEX exit path from the profitability engine and we're in full mode (mintAndSwap
+  // mints from stable, so it needs the pStable leg).
+  const isArbBatcher = batcher.variant === "mint-sell";
+  const canSell =
+    isArbBatcher && execMode === "full" && !!selection.exitPath && selection.exitPath.length >= 2;
+  const [sellAfterMint, setSellAfterMint] = useState(false);
+
+  // Reset sell-after-mint when the selection changes and the new route has no exit path.
+  useEffect(() => {
+    if (!canSell) setSellAfterMint(false);
+  }, [canSell]);
 
   const gasPerLoop =
     execMode === "inter" ? GAS_PER_LOOP_INTER : GAS_PER_LOOP[selection.intermediate];
@@ -107,10 +124,23 @@ export function MintExecute({
     batcher.address,
     MAX_ALLOWANCE,
   ]);
-  const mintFunctionName = execMode === "full" ? "mintFromStable" : "multiBuyWith";
   const expectedAff = loops * 3n * 10n ** 18n;
-  const mintArgs =
-    execMode === "full" ? [st.address, im.address, loops, expectedAff] : [im.address, loops];
+  // When sell-after-mint is enabled on an AtomicArbBatcher, use mintAndSwap (mint + DEX swap
+  // in one atomic tx). Otherwise use mintFromStable (full) or multiBuyWith (inter).
+  const useMintAndSwap = sellAfterMint && canSell;
+  const mintFunctionName = useMintAndSwap
+    ? "mintAndSwap"
+    : execMode === "full"
+      ? "mintFromStable"
+      : "multiBuyWith";
+  // mintAndSwap args: (stable, intermediate, loops, minAffOut, path[], amountOutMin, deadline)
+  const swapDeadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 min
+  const swapPath = (selection.exitPath ?? [AFFECTION_ADDR, st.address]) as Address[];
+  const mintArgs = useMintAndSwap
+    ? [st.address, im.address, loops, expectedAff, swapPath, 0n, swapDeadline]
+    : execMode === "full"
+      ? [st.address, im.address, loops, expectedAff]
+      : [im.address, loops];
   const mintSim = useSimulateBatcherStep(
     wallet.address,
     batcher.address,
@@ -180,9 +210,11 @@ export function MintExecute({
     const isApprove = step === 0;
     const label = isApprove
       ? `approve ${execMode === "full" ? st.symbol : im.symbol} → my batcher`
-      : execMode === "full"
-        ? `mintFromStable(${st.symbol}, ${im.symbol}, ${loops})`
-        : `multiBuyWith(${im.symbol}, ${loops})`;
+      : useMintAndSwap
+        ? `mintAndSwap(${st.symbol}, ${im.symbol}, ${loops}, path=${swapPath.map((a) => a.slice(0, 6)).join("→")})`
+        : execMode === "full"
+          ? `mintFromStable(${st.symbol}, ${im.symbol}, ${loops})`
+          : `multiBuyWith(${im.symbol}, ${loops})`;
     const txId = addTx({ module: "mint", label });
     setActiveTxId(txId);
     try {
@@ -194,19 +226,26 @@ export function MintExecute({
             args: [batcher.address, MAX_ALLOWANCE],
           })) as `0x${string}`)
         : ((await writeContractAsync(
-            execMode === "full"
+            useMintAndSwap
               ? {
                   address: batcher.address,
                   abi: batcher.abi as Abi,
-                  functionName: "mintFromStable",
-                  args: [st.address, im.address, loops, expectedAff],
+                  functionName: "mintAndSwap",
+                  args: [st.address, im.address, loops, expectedAff, swapPath, 0n, swapDeadline],
                 }
-              : {
-                  address: batcher.address,
-                  abi: batcher.abi as Abi,
-                  functionName: "multiBuyWith",
-                  args: [im.address, loops],
-                },
+              : execMode === "full"
+                ? {
+                    address: batcher.address,
+                    abi: batcher.abi as Abi,
+                    functionName: "mintFromStable",
+                    args: [st.address, im.address, loops, expectedAff],
+                  }
+                : {
+                    address: batcher.address,
+                    abi: batcher.abi as Abi,
+                    functionName: "multiBuyWith",
+                    args: [im.address, loops],
+                  },
           )) as `0x${string}`);
       setExecHash(hash);
       setTxStatus(txId, { hash, status: "confirming" });
@@ -323,6 +362,30 @@ export function MintExecute({
           </p>
         )}
 
+        {/* sell-after-mint toggle — only for AtomicArbBatcher with an exit path */}
+        {canSell && (
+          <label className="flex items-center gap-2 border border-border bg-panel-2 px-3 py-2 text-xs">
+            <input
+              type="checkbox"
+              checked={sellAfterMint}
+              onChange={(e) => setSellAfterMint(e.target.checked)}
+              className="accent-[var(--c-accent)]"
+            />
+            <span className="text-text">
+              sell after mint{" "}
+              <span className="text-text-faint">
+                (mint + swap Ⓐ→{st.symbol} via PulseX in one tx — defeats sell-side sniping)
+              </span>
+            </span>
+          </label>
+        )}
+        {isArbBatcher && !canSell && execMode === "full" && (
+          <p className="text-text-faint">
+            AtomicArbBatcher detected, but no DEX exit path available for this route — minting will
+            send Ⓐ to your wallet (no swap). Select a route with a DEX exit to enable mint+sell.
+          </p>
+        )}
+
         {/* step 1: approve */}
         <StepRow
           n={1}
@@ -345,20 +408,22 @@ export function MintExecute({
           onClick={() => exec(0)}
         />
 
-        {/* step 2: mint */}
+        {/* step 2: mint (or mint + swap) */}
         <StepRow
           n={2}
           label={
-            execMode === "full"
-              ? `mintFromStable(${st.symbol}, ${im.symbol}, ${loops})`
-              : `multiBuyWith(${im.symbol}, ${loops})`
+            useMintAndSwap
+              ? `mintAndSwap(${st.symbol}, ${im.symbol}, ${loops}, ${swapPath.map((a) => a.slice(0, 6)).join("→")})`
+              : execMode === "full"
+                ? `mintFromStable(${st.symbol}, ${im.symbol}, ${loops})`
+                : `multiBuyWith(${im.symbol}, ${loops})`
           }
           sub={mintSimStatus}
           done={false}
           success={
             lastMintHash != null ? (
               <span>
-                {"minted ✓ "}
+                {useMintAndSwap ? "minted + swapped ✓ " : "minted ✓ "}
                 <a
                   href={scannerUrl(lastMintHash, "tx")}
                   target="_blank"
@@ -382,7 +447,7 @@ export function MintExecute({
             overGasCeiling ||
             blockedByBalance
           }
-          ctaLabel="mint Ⓐ"
+          ctaLabel={useMintAndSwap ? "mint + sell Ⓐ" : "mint Ⓐ"}
           onClick={() => exec(1)}
         />
 
@@ -417,7 +482,16 @@ export function MintExecute({
         )}
 
         <p className="text-text-faint">
-          {execMode === "full" ? (
+          {useMintAndSwap ? (
+            <>
+              One approval (max, one-time per {st.symbol}) + one atomic tx. The full route —{" "}
+              {st.symbol} → {im.symbol} → Generate×N → BuyWith* → Ⓐ → PulseX swap → {st.symbol} to
+              you — runs inside your AtomicArbBatcher, so there’s no sandwich window on either the
+              mint or the sell. The swap uses the best DEX exit path selected above.{" "}
+              <code>amountOutMin = 0</code> (no slippage guard — the pre-simulation confirms the
+              route is viable, but watch the price impact column).
+            </>
+          ) : execMode === "full" ? (
             <>
               One approval (max, one-time per {st.symbol}) + one mint tx. The full route —{" "}
               {st.symbol} → {im.symbol} → Generate×N → BuyWith* → Ⓐ to you — runs atomically inside
