@@ -7,7 +7,7 @@ import { Panel } from "@/components/ui/Panel";
 import { affectionAbi } from "@/config/abis/affection.abi";
 import { mathAbi } from "@/config/abis/math.abi";
 import { AFFECTION_ADDR, MATH_ADDR, TOKENS } from "@/config/registry";
-import { exportKnowledgeBundle } from "@/lib/bundle/export";
+import { exportKnowledgeBundle, exportMarkdownPack } from "@/lib/bundle/export";
 import { DOCS, README } from "@/lib/docs/loader";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -24,7 +24,7 @@ export function KBIndex() {
           The committed reference for the AFFECTION ecosystem — every fact traceable to verified
           on-chain source. Static, offline-capable, copy-pasteable.
         </p>
-        <div>
+        <div className="flex gap-2">
           <Button
             variant="accent"
             size="sm"
@@ -40,12 +40,31 @@ export function KBIndex() {
           >
             {exporting ? "packing…" : "download bundle (.zip)"}
           </Button>
+          <Button
+            variant="default"
+            size="sm"
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                await exportMarkdownPack();
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "packing…" : "download AI pack (.md)"}
+          </Button>
         </div>
       </section>
 
       {README && (
         <Panel title="readme">
-          <Link to="/kb/$doc" params={{ doc: README.slug }} className="text-info hover:underline">
+          <Link
+            to="/knowledge-base/$doc"
+            params={{ doc: README.slug }}
+            className="text-info hover:underline"
+          >
             ▸ {README.title}
           </Link>
         </Panel>
@@ -56,7 +75,7 @@ export function KBIndex() {
           {docs.map((d) => (
             <li key={d.slug}>
               <Link
-                to="/kb/$doc"
+                to="/knowledge-base/$doc"
                 params={{ doc: d.slug }}
                 className="flex items-baseline gap-2 px-1 py-0.5 text-text-dim hover:text-text"
               >

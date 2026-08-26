@@ -6,7 +6,7 @@ import { RootLayout } from "./RootLayout";
 // Code-based route tree (no file-based codegen). Deterministic, fully typed.
 //
 // Routes are code-split via React.lazy so the initial dashboard shell is light: only the
-// Dashboard + RootLayout ship in the main chunk; /mint, /batcher, /metrics, /kb/* load on
+// Dashboard + RootLayout ship in the main chunk; /mint, /batcher, /metrics, /knowledge-base/* load on
 // navigation (and preloads on hover via defaultPreload="intent"). The lazy() chunks are
 // separate Vite output files (see dist/assets/).
 
@@ -51,16 +51,16 @@ const indexRoute = createRoute({
   component: Dashboard,
 });
 
-// /kb is a layout route: its Outlet renders either the index (KBIndex at exactly /kb)
-// or the document route (KBDoc at /kb/$doc). Without the Outlet, the child route
-// matches but never mounts — the doc page silently shows the index instead.
+// /knowledge-base is a layout route: its Outlet renders either the index (KBIndex at exactly
+// /knowledge-base) or the document route (KBDoc at /knowledge-base/$doc). Without the Outlet,
+// the child route matches but never mounts — the doc page silently shows the index instead.
 function KbLayout() {
   return <Outlet />;
 }
 
 const kbRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/kb",
+  path: "/knowledge-base",
   component: KbLayout,
 });
 

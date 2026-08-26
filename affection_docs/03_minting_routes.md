@@ -13,7 +13,7 @@ All three "main" routes converge on the same effective cost:
 
 This is the **hard floor price** for freshly‑minted Ⓐ. (The `Fa` and `Faung` routes are
 priced differently because those tokens' own minting economics differ — see
-[Other routes](#other-routes-fa--faung).)
+[Other routes](#other-routes-fa-and-faung).)
 
 ## Rate table (authoritative)
 
@@ -90,7 +90,7 @@ to AFFECTION → `Affection.Generate()` × N → `Affection.BuyWithG5(amount)` /
   balance, so you (or a batcher contract) must call `Generate()` (for Ⓐ) or
   `Random()`/`BuyWithDAI()` (for the intermediates) enough times *first* in the same
   transaction, otherwise `BuyWith*` reverts with `ERC20InsufficientBalance`.
-- **pUSDT is bugged in MATH v1.1** — verified in the contract source; use pDAI/pUSDC for MATH.
+- **pUSDT is bugged in MATH v1.1** — verified in the contract source; use pDAI/pUSDC for MATH. (Because pUSDT's non-standard `transferFrom` returns no value, MATH's strict `bool` check unconditionally reverts the transaction.)
 - **Minting stops at the cap.** Both Ⓐ (1,111,111,111) and MATH (1,111,111,111) stop
   minting once their ceiling is hit. Current Ⓐ supply ≈ 366.6M, so this is not imminent.
 - **Snipers.** A single manual `Generate()` + `BuyWith*` is two public transactions and can
@@ -121,7 +121,21 @@ within the gas limit one transaction is all you need; larger amounts split acros
 > MATH‑route mint is ~33% of an entire block) only fits in blocks with enough spare
 > capacity. During network congestion — blocks near‑full, elevated base fee — such a
 > transaction can sit pending for several minutes even at a reasonable gas price, and a
-> wallet "speed up" (same nonce, higher fee) still has to wait for block space. This is
 > normal: either wait it out or split the mint into smaller transactions. The wizard
 > shows the live network context (base fee, block fullness) and each step's estimated gas
 > so you know what to expect before signing.
+
+## Other routes (Fa and Faung)
+
+The Fa and Faung tokens are experimental, low-supply "state-machine" tokens. While you *can* route through them to mint AFFECTION, their economics differ by design and offer a much worse conversion rate than the standard routes. This has been verified directly by reading the canonical contract sources (`fa_v1_0.sol`, `faung_v1_0.sol`, and `affection.sol`).
+
+- **The Fa Route:**
+  - **Mint Fa:** 1 G5 yields 7 Fa (`fa_v1_0.sol: BuyWithG5`).
+  - **Redeem for Ⓐ:** 4 Fa = 1 Ⓐ (`affection.sol: BuyWithFa`).
+  - **Net Result:** 1 G5 → 7 Fa → **1.75 Ⓐ**. (Compared to the direct route where 1 G5 yields **5 Ⓐ**).
+- **The Faung Route:**
+  - **Mint Faung:** 1 G5 yields 1 Faung (`faung_v1_0.sol: BuyWithG5`).
+  - **Redeem for Ⓐ:** 2 Faung = 1 Ⓐ (`affection.sol: BuyWithFaung`).
+  - **Net Result:** 1 G5 → 1 Faung → **0.5 Ⓐ**.
+
+Because of these rates, these are strictly novelty routes and should not be used to mint Ⓐ if you are optimizing for cost. See [`05_ecosystem_tokens.md`](05_ecosystem_tokens.md) for more context on these tokens.

@@ -20,7 +20,12 @@ export function CommandPalette() {
   const items = useMemo<Item[]>(
     () => [
       ...NAV.map((n) => ({ to: n.to, label: n.label, kind: "module", desc: n.desc })),
-      ...DOCS.map((d) => ({ to: `/kb/${d.slug}`, label: d.title, kind: "doc", desc: d.filename })),
+      ...DOCS.map((d) => ({
+        to: `/knowledge-base/${d.slug}`,
+        label: d.title,
+        kind: "doc",
+        desc: d.filename,
+      })),
     ],
     [],
   );

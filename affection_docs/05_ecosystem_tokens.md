@@ -102,7 +102,7 @@ Redeem functions (drain the contract's MATH buffer to the caller):
 |---|---|---|---|
 | `BuyWithDAI(amount)`   | `amount` pDAI           | `amount` MATH | 1 MATH = 1 pDAI |
 | `BuyWithUSDC(amount)`  | `amount` pUSDC (6 dec)   | `amount` MATH | 1 MATH = 1 pUSDC |
-| `BuyWithUSDT(amount)`  | `amount` pUSDT (6 dec)  | `amount` MATH | ⚠️ **bugged** (verified in source) — don't use |
+| `BuyWithUSDT(amount)`  | `amount` pUSDT (6 dec)  | `amount` MATH | ⚠️ **bugged** (verified in source) — don't use (reverts due to missing return value) |
 | `BuyWithG5(amount)`    | `amount / 4` G5         | `amount` MATH | 1 G5 = 4 MATH |
 | `BuyWithPI(amount)`    | `amount / 212` PI        | `amount` MATH | 1 PI = 212 MATH |
 | `BuyWithMATH(amount)`   | `amount` MATH v1.0 (`0x5EF3011243B03f817223A19f277638397048A0DC`) | `amount` MATH v1.1 | 1:1 |

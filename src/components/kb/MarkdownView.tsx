@@ -54,7 +54,7 @@ const components: Components = {
     const slug = kbSlugFromHref(href);
     if (slug) {
       return (
-        <a href={`/kb/${slug}`} className="text-info hover:underline">
+        <a href={`/knowledge-base/${slug}`} className="text-info hover:underline">
           {children}
         </a>
       );

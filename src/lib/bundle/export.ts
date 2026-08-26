@@ -53,3 +53,44 @@ export async function exportKnowledgeBundle(): Promise<void> {
   const stamp = new Date().toISOString().slice(0, 10);
   saveAs(blob, `affection-knowledge-${stamp}.zip`);
 }
+
+export async function exportMarkdownPack(): Promise<void> {
+  const chunks: string[] = [];
+  
+  chunks.push("# AFFECTION Terminal — Knowledge Bundle");
+  chunks.push(`Exported on ${new Date().toISOString()}`);
+  chunks.push("");
+  chunks.push("This is a single-file pack of the AFFECTION ecosystem knowledge base, registry, and contract sources.");
+  chunks.push("");
+
+  const [registryFiles, sources, batcherSources] = await Promise.all([
+    loadRegistryFiles(),
+    loadSources(),
+    loadBatcherSources(),
+  ]);
+
+  const addFile = (folder: string, filename: string, content: string, ext: string) => {
+    chunks.push(`================================================================`);
+    chunks.push(`File: ${folder}/${filename}`);
+    chunks.push(`================================================================`);
+    
+    // Only wrap in code fences if it's not already markdown
+    if (ext === "md") {
+      chunks.push(content);
+    } else {
+      chunks.push(`\`\`\`${ext}`);
+      chunks.push(content);
+      chunks.push(`\`\`\``);
+    }
+    chunks.push("");
+  };
+
+  for (const d of DOCS) addFile("docs", `${d.filename}.md`, d.content, "md");
+  for (const f of registryFiles) addFile("registry", f.filename, f.content, "json");
+  for (const s of sources) addFile("sources", s.filename, s.content, "solidity");
+  for (const b of batcherSources) addFile("batchers", b.filename, b.content, "solidity");
+
+  const blob = new Blob([chunks.join("\n")], { type: "text/markdown;charset=utf-8" });
+  const stamp = new Date().toISOString().slice(0, 10);
+  saveAs(blob, `affection-knowledge-pack-${stamp}.md`);
+}
